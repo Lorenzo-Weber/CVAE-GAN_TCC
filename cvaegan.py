@@ -68,7 +68,7 @@ class GAN_trainer():
 
         data_loader, x_test, y_test = self.load_data(x_data, y_data)
 
-        self.load_wheights(pre_trained_path)        
+        # self.load_wheights(pre_trained_path)        
 
         criterion=nn.MSELoss().to(device)
         optim_E=torch.optim.Adam(self.model.encoder.parameters(), lr=self.lr)
