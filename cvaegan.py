@@ -76,7 +76,6 @@ class GAN_trainer():
         optim_Dis=torch.optim.Adam(self.model.discriminator.parameters(), lr=self.lr*self.alpha)
 
         if type(x_data) is pd.DataFrame:
-            print('entrei')
             x_data = x_data.iloc[:, :self.DATA_LENGTH].values.astype(np.float32)
 
         best_loss = float('inf')
@@ -194,6 +193,6 @@ class GAN_trainer():
             ax.legend()
         
         fig.suptitle(f'Sintetic vs Original (split={split})', fontsize=16)
-
+        os.makedirs('imgs', exist_ok=True)
         plt.savefig(f'imgs/cvae_gan_split_{split}.png')
         plt.close(fig)
