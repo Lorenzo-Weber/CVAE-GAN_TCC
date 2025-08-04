@@ -45,8 +45,8 @@ class GAN_trainer():
         return data_loader, x_test, y_test
     
     def load_wheights(self, path):
-        if os.path.exists(path):
-            pretrained_dict = torch.load(path)
+
+        pretrained_dict = torch.load(path)
         filtered_dict = {k: v for k, v in pretrained_dict.items() if not (
             k.startswith('encoder.input') or k.startswith('decoder.input') or k.startswith('discriminator.input') or k.startswith('decoder.reconstruction_head')
         )}
@@ -68,7 +68,7 @@ class GAN_trainer():
 
         data_loader, x_test, y_test = self.load_data(x_data, y_data)
 
-        # self.load_wheights(pre_trained_path)        
+        self.load_wheights(pre_trained_path)        
 
         criterion=nn.MSELoss().to(device)
         optim_E=torch.optim.Adam(self.model.encoder.parameters(), lr=self.lr)
@@ -83,8 +83,6 @@ class GAN_trainer():
 
         for epoch in range(epochs):
 
-            prior_loss_list,gan_loss_list,recon_loss_list=[],[],[]
-            dis_real_list,dis_fake_list,dis_prior_list=[],[],[]
             for i, (data, labels) in enumerate(data_loader,0):
                 
                 bs = data.shape[0]
