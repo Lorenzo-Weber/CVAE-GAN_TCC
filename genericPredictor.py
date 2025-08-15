@@ -1,79 +1,68 @@
 import torch
-from torch import nn
+import torch.nn as nn
 import torch.optim as optim
-from sklearn.preprocessing import StandardScaler
-from sklearn.utils import shuffle
-import pandas as pd
-from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, TensorDataset
+import numpy as np
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# Funções utilitárias
+def get_out_shape(model: nn.ModuleList | nn.Sequential, input_shape: tuple[int, ...]) -> tuple:
+    input = torch.randn(input_shape, device=next(model.parameters()).device)
+    return model(input).shape
+
+def get_out_features(model: nn.ModuleList | nn.Sequential, input_shape: tuple[int, ...]) -> int:
+    size = model(torch.rand(*(input_shape))).data.shape
+    return int(np.prod(list(size)))
 
 class GenericNet(nn.Module):
-    def __init__(self, input_size, output_size):
+    def __init__(self, expected_input: int, model_output: int):
         super(GenericNet, self).__init__()
 
-        self.seq1 = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm1d(32),
-            nn.Dropout(0.2),
-            nn.ReLU(),
-            nn.Conv1d(32, 64, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm1d(64),
-            nn.Dropout(0.2),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool1d(1),
+        # Convoluções
+        self.convolutions = nn.Sequential(
+            nn.Conv1d(1, 8, kernel_size=24, stride=2, padding=4),
+            nn.ELU(),
+            nn.Conv1d(8, 24, kernel_size=8, stride=2, padding=3),
+            nn.ELU(),
             nn.Flatten(),
-            nn.Linear(64, output_size),
+        )
+
+        # Calcula dinamicamente o número de features de saída
+        out_features = get_out_features(self.convolutions, (1, 1, expected_input))
+
+        # Lineares
+        self.linears = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(out_features, 672),
+            nn.ELU(),
+            nn.Linear(672, 336),
+            nn.ELU(),
+            nn.Linear(336, model_output),
         )
 
     def forward(self, x):
-        return self.seq1(x)
+        x = self.convolutions(x)
+        x = self.linears(x)
+        return x
 
-    def fit(self, X_train, y_train, epochs=200, learning_rate=0.001):
-        scaler = StandardScaler()
-        X_train_np = scaler.fit_transform(X_train)
-        X_train_tensor = torch.tensor(X_train_np, dtype=torch.float32).unsqueeze(1).to(device)
-        y_train_tensor = torch.tensor(y_train, dtype=torch.float32).to(device)
-
-        criterion = nn.MSELoss()
-        optimizer = optim.Adam(self.parameters(), lr=learning_rate)
-
+    def fit(self, x_train, y_train, epochs=10, batch_size=32, lr=1e-3):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.to(device)
 
-        best_loss = float('inf')  # Inicializa com infinito
-        best_state = None         # Para armazenar o melhor estado do modelo
+        loader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=True)
+
+        optimizer = optim.Adam(self.parameters(), lr=lr)
+        loss_fn = nn.MSELoss()
 
         for epoch in range(epochs):
-            self.train()
-            optimizer.zero_grad()
+            total_loss = 0
+            for xb, yb in loader:
+                xb, yb = xb.to(device), yb.to(device)
 
-            outputs = self(X_train_tensor).squeeze()
-            loss = criterion(outputs, y_train_tensor)
+                optimizer.zero_grad()
+                loss = loss_fn(self(xb), yb)
+                loss.backward()
+                optimizer.step()
 
-            loss.backward()
-            optimizer.step()
+                total_loss += loss.item()
 
-            if loss.item() < best_loss:
-                best_loss = loss.item()
-                best_state = self.state_dict()  # Salva o melhor estado
-
-            if (epoch + 1) % 10 == 0:
-                print(f"Epoch [{epoch + 1}/{epochs}], Loss: {loss.item():.4f}")
-
-        if best_state is not None:
-            self.load_state_dict(best_state)
-
-        print(f"\nMelhor loss durante o treinamento: {best_loss:.4f}")
-
-
-    def predict(self, X_test):
-        scaler = StandardScaler()
-        X_test_np = scaler.fit_transform(X_test)
-        X_test_tensor = torch.tensor(X_test_np, dtype=torch.float32).unsqueeze(1).to(device)
-
-        self.eval()
-        self.to(device)
-
-        with torch.no_grad():
-            outputs = self(X_test_tensor).squeeze()
-        return outputs.cpu().numpy()  
+            print(f"Epoch {epoch+1}/{epochs} - Loss: {total_loss/len(loader):.6f}")
