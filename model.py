@@ -12,21 +12,6 @@ def weights_init(m):
         nn.init.normal_(m.weight.data, 1.0, 0.02)
         nn.init.constant_(m.bias.data, 0)
 
-class ResidualBlock1D(nn.Module):
-    def __init__(self, channels):
-        super(ResidualBlock1D, self).__init__()
-        self.block = nn.Sequential(
-            nn.Conv1d(channels, channels, kernel_size=3, padding=1),
-            nn.BatchNorm1d(channels),
-            nn.ReLU(),
-            nn.Conv1d(channels, channels, kernel_size=3, padding=1),
-            nn.BatchNorm1d(channels)
-        )
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        return self.relu(x + self.block(x))
-
 class Encoder(nn.Module):
     def __init__(self, NUM_CONDITIONS=6, BATCH_SIZE=64, DATA_LENGTH=256, DROPOUT=0.3):
         super(Encoder, self).__init__()
@@ -70,50 +55,41 @@ class Encoder(nn.Module):
         return mean, logvar
 
 class Decoder(nn.Module):
-    def __init__(self, data_length=256, num_conditions=6, dropout=0.3):
+    def __init__(self, NUM_CONDITIONS=6, DATA_LENGTH=256, DROPOUT=0.3):
         super(Decoder, self).__init__()
 
         self.input = nn.Sequential(
-            nn.Linear(data_length + num_conditions, 256 * 8),
+            nn.Linear(DATA_LENGTH + NUM_CONDITIONS, 256 * 8),
             nn.BatchNorm1d(256 * 8, momentum=0.9),
             nn.LeakyReLU(0.2),
         )
 
         self.sequential = nn.Sequential(
             nn.Unflatten(1, (256, 8)),
-
             nn.ConvTranspose1d(256, 128, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm1d(128, momentum=0.9),
             nn.LeakyReLU(0.2),
-            ResidualBlock1D(128),
-            nn.Dropout(dropout),
-
+            nn.Dropout(DROPOUT),
             nn.ConvTranspose1d(128, 64, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm1d(64, momentum=0.9),
             nn.LeakyReLU(0.2),
-            ResidualBlock1D(64),
-            nn.Dropout(dropout),
-
-            nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1),
+            nn.Dropout(DROPOUT),
+            nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1),   
             nn.BatchNorm1d(32, momentum=0.9),
             nn.LeakyReLU(0.2),
-            ResidualBlock1D(32),
-
-            nn.ConvTranspose1d(32, 16, kernel_size=4, stride=2, padding=1),
+            nn.ConvTranspose1d(32, 16, kernel_size=4, stride=2, padding=1),    
             nn.BatchNorm1d(16, momentum=0.9),
             nn.LeakyReLU(0.2),
-            ResidualBlock1D(16),
-
-            nn.ConvTranspose1d(16, 1, kernel_size=3, stride=2, padding=1, output_padding=1),
+            nn.ConvTranspose1d(16, 1, kernel_size=3, stride=2, padding=1, output_padding=1), 
             nn.Sigmoid()
         )
 
         self.reconstruction_head = nn.Sequential(
-            nn.Linear(data_length, 128),
+            nn.Linear(DATA_LENGTH, 128), 
             nn.ReLU(),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Linear(64, num_conditions)
+            nn.Linear(64, NUM_CONDITIONS) 
         )
 
     def forward(self, x, c):
@@ -123,6 +99,7 @@ class Decoder(nn.Module):
         x = self.sequential(x)
         c_reconstructed = self.reconstruction_head(z)
         return x, c_reconstructed
+
 
 class Discriminator(nn.Module):
     def __init__(self, NUM_CONDITIONS=6, DATA_LENGTH=256, DROPOUT=0.3):
@@ -155,6 +132,22 @@ class Discriminator(nn.Module):
             nn.Sigmoid()
         )
 
+        self.labels_head = nn.Sequential(
+            nn.BatchNorm1d(DATA_LENGTH, momentum=0.9),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(DROPOUT),
+            nn.Conv1d(DATA_LENGTH, 64, 5, padding=2, stride=2),
+            nn.BatchNorm1d(64, momentum=0.9),
+            nn.LeakyReLU(0.2),
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+            nn.Linear(64, 32),
+            nn.BatchNorm1d(32, momentum=0.9),
+            nn.LeakyReLU(0.2),
+            nn.Linear(32, NUM_CONDITIONS),
+            nn.ReLU()
+        )
+
     def forward(self, x, c):
 
         c_reshape = c.unsqueeze(2).expand(-1, -1, x.size(2))
@@ -163,25 +156,30 @@ class Discriminator(nn.Module):
         x = self.input(concat)
 
         x = self.sequential1(x)
+        
         x1 = x
-        x = self.sequential2(x)  
 
-        return x, x1
+        features = self.labels_head(x1)
+
+        x = self.sequential2(x)
+
+        return x, x1, features
 
 class CVAE_GAN(nn.Module):
-    def __init__(self, BATCH_SIZE=64, DATA_LENGTH=256):
+    def __init__(self, BATCH_SIZE=64, DATA_LENGTH=256, NUM_CONDITIONS=6):
         super(CVAE_GAN, self).__init__()
 
-        self.encoder = Encoder()
-        self.decoder = Decoder()
-        self.discriminator = Discriminator()
+        self.BATCH_SIZE = BATCH_SIZE
+        self.DATA_LENGTH = DATA_LENGTH
+        self.NUM_CONDITIONS = NUM_CONDITIONS
+
+        self.encoder = Encoder(NUM_CONDITIONS = NUM_CONDITIONS)
+        self.decoder = Decoder(NUM_CONDITIONS = NUM_CONDITIONS)
+        self.discriminator = Discriminator(NUM_CONDITIONS= NUM_CONDITIONS)
 
         self.encoder.apply(weights_init)
         self.decoder.apply(weights_init)
         self.discriminator.apply(weights_init)
-
-        self.BATCH_SIZE = BATCH_SIZE
-        self.DATA_LENGTH = DATA_LENGTH
 
     def forward(self, x, c):
         bs = x.shape[0]
