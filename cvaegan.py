@@ -10,7 +10,6 @@ import torch.nn as nn
 import copy
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
-from sklearn.neighbors import LocalOutlierFactor
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -139,10 +138,12 @@ class GAN_trainer():
 
                 # _, features_real, _ = self.model.discriminator(datav, labelsv)
 
-                # datav_diff = torch.diff(datav, dim=2)
-                # rec_enc_diff = torch.diff(rec_enc, dim=2)
+                datav_diff = torch.diff(datav, dim=2)
+                rec_enc_diff = torch.diff(rec_enc, dim=2)
 
-                rec_loss = self.gamma * self.diff_loss(rec_enc)
+                rec_loss = self.gamma * (criterion(rec_enc_diff, datav_diff) + criterion(rec_enc, datav))
+
+                # rec_loss = self.gamma * self.diff_loss(rec_enc)
 
                 prior_loss = -0.5 * torch.sum(1 + logvar - mean.pow(2) - logvar.exp())
 
@@ -185,6 +186,7 @@ class GAN_trainer():
         x_train = scalerx.inverse_transform(x_train)
 
         self.plot_data(x_aug, x_train, split=self.SPLIT)
+        print('entrei')
 
         return x_aug, y_aug
     
@@ -223,5 +225,5 @@ class GAN_trainer():
             ax.legend()
         os.makedirs('data/plots/cvae_gan', exist_ok=True)
         fig.suptitle(f'Sintetic vs Original (split={split})', fontsize=16)
-        fig.savefig(f'data/plots/cvae_gan/sintetic_vs_original_split_{split}.png')
+        fig.savefig(f'imgs/sintetic_vs_original_split_{split}.png')
         plt.close(fig)
