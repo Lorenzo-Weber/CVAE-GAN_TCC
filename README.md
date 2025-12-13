@@ -1,112 +1,111 @@
-# CVAE-GAN para Geração de Espectros NIR
+## CVAE-GAN for NIR Spectra Generation
 
-Este repositório implementa uma **CVAE-GAN** (Conditional Variational Autoencoder + Generative Adversarial Network) utilizada no meu trabalho de conclusao de curso.
+This repository implements a **CVAE-GAN** (Conditional Variational Autoencoder + Generative Adversarial Network) used in my final graduation project.
 
-O modelo foi pensado para trabalhar com espectros unidimensionais (vetores) e rótulos condicionais, sendo adequado para tarefas de aumento de dados (*data augmentation*) em problemas de classificação ou regressão.
-
----
-
-## Base de uma GAN
-
-Uma **GAN** é composta por dois modelos que competem entre si:
-
-* **Gerador (G)**: aprende a gerar dados sintéticos que se pareçam com os dados reais.
-* **Discriminador (D)**: aprende a distinguir dados reais de dados gerados.
-
-Durante o treinamento:
-
-1. O gerador cria amostras falsas.
-2. O discriminador avalia se as amostras são reais ou falsas.
-3. O gerador é penalizado quando o discriminador identifica suas amostras como falsas.
-4. O discriminador é penalizado quando erra a classificação.
-
-Esse processo adversarial força o gerador a produzir dados cada vez mais realistas.
+The model was designed to work with one-dimensional spectra (vectors) and conditional labels, making it suitable for **data augmentation** tasks in classification or regression problems.
 
 ---
 
-## Extensão para CVAE-GAN
+### **Foundation of a GAN**
 
-Neste projeto, a GAN é combinada com um **VAE condicional**:
+A **GAN** is composed of two competing models:
 
-* O **Encoder** aprende uma representação latente (média e variância) dos espectros reais.
-* O **Decoder / Gerador** reconstrói ou gera novos espectros a partir do espaço latente.
-* A geração é **condicional**, ou seja, utiliza rótulos (classes ou atributos) como entrada adicional.
+* **Generator (G)**: Learns to generate synthetic data that resembles the real data.
+* **Discriminator (D)**: Learns to distinguish between real data and generated data.
 
-Com isso, o modelo aprende:
+During training:
 
-* Estrutura latente dos espectros (VAE)
-* Realismo estatístico e visual (GAN)
+1.  The generator creates fake samples.
+2.  The discriminator evaluates whether the samples are real or fake.
+3.  The generator is penalized when the discriminator identifies its samples as fake.
+4.  The discriminator is penalized when it misclassifies a sample.
 
----
-
-## Pré-processamentos espectrais
-
-Antes do treinamento, os espectros passam por transformações clássicas em espectroscopia NIR.
-
-### MSC – *Multiplicative Scatter Correction*
-
-O **MSC** corrige variações multiplicativas e aditivas causadas por espalhamento da luz, diferenças de caminho óptico ou granulometria da amostra.
-
-Intuição:
-
-* Ajusta cada espectro em relação a um espectro de referência (geralmente a média).
-* Reduz efeitos não químicos, preservando a informação espectral relevante.
+This adversarial process forces the generator to produce increasingly realistic data.
 
 ---
 
-### SNV – *Standard Normal Variate*
+### **Extension to CVAE-GAN**
 
-O **SNV** normaliza cada espectro individualmente:
+Mestre, in this project, the GAN is combined with a **Conditional VAE**:
 
-* Subtrai a média do espectro.
-* Divide pelo desvio padrão.
+* The **Encoder** learns a latent representation (mean and variance) of the real spectra.
+* The **Decoder / Generator** reconstructs or generates new spectra from the latent space.
+* The generation is **conditional**, meaning it uses labels (classes or attributes) as additional input.
 
-Isso reduz efeitos de espalhamento e escala, tornando os espectros mais comparáveis entre si.
+With this setup, the model learns:
 
----
-
-## Filtro aplicado aos espectros gerados
-
-Após a geração, é aplicado um **filtro nos espectros sintéticos** para remover amostras fisicamente incoerentes ou ruidosas.
-
-Esse filtro basicamente calcula a distancia euclidiana entre o espectro sintetico gerado com todos os reais e seleciona os com a menor distancia
-
-O objetivo é garantir que apenas espectros plausíveis sejam adicionados ao conjunto de dados.
+* Latent structure of the spectra (VAE)
+* Statistical and visual realism (GAN)
 
 ---
 
-## Penalização pela primeira derivada
+### **Spectral Preprocessing**
 
-Além das perdas tradicionais da GAN e do VAE, o treinamento inclui uma **penalização baseada na primeira derivada do espectro**.
+Mestre, before training, the spectra undergo classic transformations used in NIR spectroscopy.
 
-Ideia central:
+#### **MSC – Multiplicative Scatter Correction**
 
-* Espectros NIR reais tendem a ser **suaves**.
-* Grandes variações ponto a ponto indicam ruído ou artefatos.
+**MSC** corrects multiplicative and additive variations caused by light scattering, differences in optical path length, or sample granularity.
 
-Implementação conceitual:
+Intuition:
 
-* Calcula-se a primeira derivada do espectro real e do gerado.
-* Penaliza-se a diferença entre essas derivadas.
-
-Efeito:
-
-* Reduz oscilações artificiais.
-* Força o gerador a respeitar a continuidade espectral.
+* Adjusts each spectrum relative to a reference spectrum (usually the mean).
+* Reduces non-chemical effects, preserving the relevant spectral information.
 
 ---
 
-## Resumo do funcionamento
+#### **SNV – Standard Normal Variate**
 
-1. Os espectros reais são pré-processados (MSC / SNV).
-2. O Encoder aprende a distribuição latente.
-3. O Gerador cria espectros condicionados aos rótulos.
-4. O Discriminador avalia real vs. sintético.
-5. O treinamento considera:
+**SNV** normalizes each spectrum individually:
 
-   * Loss adversarial (GAN)
-   * Loss de reconstrução (VAE)
-   * KL divergence
-   * Penalização pela primeira derivada
-6. Os espectros gerados passam por um filtro final antes do uso.
+* Subtracts the spectrum's mean.
+* Divides by the standard deviation.
+
+This reduces scattering and scale effects, making the spectra more comparable to each other.
+
+---
+
+### **Filter Applied to Generated Spectra**
+
+Mestre, after generation, a **filter is applied to the synthetic spectra** to remove physically incoherent or noisy samples.
+
+This filter essentially calculates the Euclidean distance between the synthetic generated spectrum and all real spectra, and selects those with the smallest distance.
+
+The goal is to ensure that only plausible spectra are added to the dataset.
+
+---
+
+### **First Derivative Penalty**
+
+In addition to the traditional GAN and VAE losses, the training includes a **penalty based on the spectrum's first derivative**.
+
+Core idea:
+
+* Real NIR spectra tend to be **smooth**.
+* Large point-to-point variations indicate noise or artifacts.
+
+Conceptual implementation:
+
+* The first derivative of the real and generated spectra is calculated.
+* The difference between these derivatives is penalized.
+
+Effect:
+
+* Reduces artificial oscillations.
+* Forces the generator to respect spectral continuity.
+
+---
+
+### **Summary of Operation**
+
+1.  Real spectra are preprocessed (MSC / SNV).
+2.  The Encoder learns the latent distribution.
+3.  The Generator creates spectra conditioned on the labels.
+4.  The Discriminator evaluates real vs. synthetic.
+5.  Training considers:
+    * Adversarial Loss (GAN)
+    * Reconstruction Loss (VAE)
+    * KL Divergence
+    * First Derivative Penalty
+6.  The generated spectra pass through a final filter before use.
 
