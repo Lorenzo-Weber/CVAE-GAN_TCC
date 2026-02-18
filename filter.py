@@ -19,7 +19,7 @@ class Filter():
 
         self.split = split
 
-    def filter(self, fakes, y_fakes, reals):
+    def filter(self, fakes, y_fakes, real):
 
         """
             Compara os espectros gerados com os reais e seleciona os mais proximos
@@ -28,12 +28,12 @@ class Filter():
             Atributos:
                 fakes (array): espectros gerados pela CVAE-GAN
                 y_fakes (array): labels dos espectros gerados
-                reals (array): espectros reais para comparar
+                real (array): espectros reais para comparar
         """
 
         total_dists = []
         for fake in fakes:
-            dists = np.linalg.norm(reals - fake, axis=1)
+            dists = np.linalg.norm(real - fake, axis=1)
             total_dists.append(np.sum(np.abs(dists)))
 
         total_dists = np.array(total_dists)
