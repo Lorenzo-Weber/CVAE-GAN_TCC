@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -9,10 +10,12 @@ from sklearn.preprocessing import StandardScaler
 from model import GenNet
 
 BATCH_SIZE = 4
-EPOCHS = 30
+EPOCHS = 20
 LR = 4e-4
 WEIGHT_DECAY = 1e-4
 
+torch.manual_seed(42)
+np.random.seed(42)
 
 df = pd.read_csv('data/beer.csv')
 
@@ -104,3 +107,36 @@ for epoch in range(EPOCHS):
         f"Epoch {epoch+1}/{EPOCHS} | "
         f"Train Loss: {train_loss:.4f}  "
     )
+
+model.eval()
+test_loss = 0
+
+all_preds = []
+all_targets = []
+
+with torch.no_grad():
+    for x, y in test_loader:
+        x = x.to(device)
+        y = y.to(device)
+
+        pred = model(x)
+
+        loss = criterion(pred, y)
+        test_loss += loss.item()
+
+        all_preds.append(pred.cpu().numpy())
+        all_targets.append(y.cpu().numpy())
+
+test_loss /= len(test_loader)
+
+all_preds = np.concatenate(all_preds, axis=0)
+all_targets = np.concatenate(all_targets, axis=0)
+
+mse = F.mse_loss(torch.tensor(all_preds), torch.tensor(all_targets))
+mae = F.l1_loss(torch.tensor(all_preds), torch.tensor(all_targets))
+rmse = torch.sqrt(mse)
+
+print(f"Test Loss (criterion): {test_loss:.6f}")
+print(f"MSE:  {mse:.6f}")
+print(f"RMSE: {rmse:.6f}")
+print(f"MAE:  {mae:.6f}")
