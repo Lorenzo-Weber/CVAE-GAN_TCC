@@ -31,13 +31,16 @@ class Encoder(nn.Module):
 
         super(Encoder, self).__init__()
 
+        self.DATA_LENGTH = DATA_LENGTH
+        self.NUM_CONDITIONS = NUM_CONDITIONS
+
         self.input = nn.Sequential(
             nn.Conv1d(1, BATCH_SIZE, 5, padding=2, stride=2),
             nn.BatchNorm1d(BATCH_SIZE, momentum=0.9),
             nn.LeakyReLU(0.2),
         )
 
-        self.sequential = nn.Sequential(
+        self.conv_blocks = nn.Sequential(
             nn.Conv1d(BATCH_SIZE, 128, 5, padding=2, stride=2),
             nn.BatchNorm1d(128, momentum=0.9),
             nn.LeakyReLU(0.2),
@@ -49,8 +52,12 @@ class Encoder(nn.Module):
             nn.BatchNorm1d(128, momentum=0.9),
             nn.LeakyReLU(0.2),
             nn.Dropout(DROPOUT),
-            nn.Flatten(),
-            nn.Linear(2176, 2048),
+        )
+
+        self.flatten_dim = self._get_flatten_dim()
+
+        self.fc = nn.Sequential(
+            nn.Linear(self.flatten_dim, 2048),
             nn.BatchNorm1d(2048, momentum=0.9),
             nn.LeakyReLU(0.2)
         )
@@ -58,16 +65,29 @@ class Encoder(nn.Module):
         self.fc_mean = nn.Linear(2048, DATA_LENGTH)
         self.fc_logvar = nn.Linear(2048, DATA_LENGTH)
 
+    def _get_flatten_dim(self):
+        with torch.no_grad():
+            dummy_x = torch.zeros(1, 1, self.DATA_LENGTH)
+            dummy_c = torch.zeros(1, self.NUM_CONDITIONS).unsqueeze(1)
+            dummy_concat = torch.cat((dummy_x, dummy_c), dim=-1)
+            out = self.input(dummy_concat)
+            out = self.conv_blocks(out)
+            return out.view(1, -1).shape[1]
+
     def forward(self, x, c):
         c_reshape = c.unsqueeze(1)
         concat = torch.cat((x, c_reshape), dim=-1)
 
         out = self.input(concat)
-        out = self.sequential(out)
+        out = self.conv_blocks(out)
+        out = out.view(out.size(0), -1)
+        out = self.fc(out)
+
         mean = self.fc_mean(out)
         logvar = self.fc_logvar(out)
 
         return mean, logvar
+
 
 class Decoder(nn.Module):
     def __init__(self, NUM_CONDITIONS=6, DATA_LENGTH=256, DROPOUT=0.3):
@@ -87,15 +107,18 @@ class Decoder(nn.Module):
 
         super(Decoder, self).__init__()
 
+        self.DATA_LENGTH = DATA_LENGTH
+        self.NUM_CONDITIONS = NUM_CONDITIONS
+
         self.input = nn.Sequential(
-            nn.Linear(DATA_LENGTH + NUM_CONDITIONS, 256 * 8),
-            nn.BatchNorm1d(256 * 8, momentum=0.9),
+            nn.Linear(DATA_LENGTH + NUM_CONDITIONS, self.DATA_LENGTH * 8),
+            nn.BatchNorm1d(self.DATA_LENGTH * 8, momentum=0.9),
             nn.LeakyReLU(0.2),
         )
 
         self.sequential = nn.Sequential(
-            nn.Unflatten(1, (256, 8)),
-            nn.ConvTranspose1d(256, 128, kernel_size=4, stride=2, padding=1),
+            nn.Unflatten(1, (self.DATA_LENGTH, 8)),
+            nn.ConvTranspose1d(self.DATA_LENGTH, 128, kernel_size=4, stride=2, padding=1),
             nn.BatchNorm1d(128, momentum=0.9),
             nn.LeakyReLU(0.2),
             nn.Dropout(DROPOUT),
@@ -110,7 +133,6 @@ class Decoder(nn.Module):
             nn.BatchNorm1d(16, momentum=0.9),
             nn.LeakyReLU(0.2),
             nn.ConvTranspose1d(16, 1, kernel_size=3, stride=2, padding=1, output_padding=1), 
-            nn.Sigmoid()
         )
 
         self.reconstruction_head = nn.Sequential(
@@ -124,11 +146,21 @@ class Decoder(nn.Module):
     def forward(self, x, c):
         z = x
         concat = torch.cat((x, c), dim=1)
+
         x = self.input(concat)
         x = self.sequential(x)
-        c_reconstructed = self.reconstruction_head(z)
-        return x, c_reconstructed
 
+        if x.size(-1) != self.DATA_LENGTH:
+            x = torch.nn.functional.interpolate(
+                x,
+                size=self.DATA_LENGTH,
+                mode="linear",
+                align_corners=False
+            )
+
+        c_reconstructed = self.reconstruction_head(z)
+
+        return x, c_reconstructed
 
 class Discriminator(nn.Module):
     def __init__(self, NUM_CONDITIONS=6, DATA_LENGTH=256, DROPOUT=0.3):
@@ -149,6 +181,9 @@ class Discriminator(nn.Module):
 
         super(Discriminator, self).__init__()
 
+        self.DATA_LENGTH = DATA_LENGTH
+        self.NUM_CONDITIONS = NUM_CONDITIONS
+
         self.input = nn.Sequential(
             nn.Conv1d(1, 32, 5, padding=2, stride=1),
             nn.LeakyReLU(0.2)
@@ -166,13 +201,12 @@ class Discriminator(nn.Module):
             nn.Conv1d(DATA_LENGTH, DATA_LENGTH, 5, padding=2, stride=2),
         )
 
-        self. sequential2 = nn.Sequential(
-            nn.BatchNorm1d(DATA_LENGTH, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-            nn.AdaptiveAvgPool1d(32),
-            nn.Flatten(),
-            nn.Linear(32*DATA_LENGTH, 512),
+        self.pool = nn.AdaptiveAvgPool1d(32)
+
+        self.flatten_dim = self._get_flatten_dim()
+
+        self.classifier = nn.Sequential(
+            nn.Linear(self.flatten_dim, 512),
             nn.BatchNorm1d(512, momentum=0.9),
             nn.LeakyReLU(0.2),
             nn.Dropout(DROPOUT),
@@ -196,22 +230,34 @@ class Discriminator(nn.Module):
             nn.ReLU()
         )
 
+    def _get_flatten_dim(self):
+        with torch.no_grad():
+            dummy_x = torch.zeros(1, 1, self.DATA_LENGTH)
+            dummy_c = torch.zeros(1, self.NUM_CONDITIONS).unsqueeze(1)
+            dummy_concat = torch.cat((dummy_x, dummy_c), dim=-1)
+            out = self.input(dummy_concat)
+            out = self.sequential1(out)
+            out = self.pool(out)
+            return out.view(1, -1).shape[1]
+
     def forward(self, x, c):
 
         c_reshape = c.unsqueeze(1)
         concat = torch.cat((x, c_reshape), dim=-1)
 
         x = self.input(concat)
-
         x = self.sequential1(x)
         
         x1 = x
 
         features = self.labels_head(x1)
 
-        x = self.sequential2(x)
+        x = self.pool(x1)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
 
         return x, x1, features
+
 
 class CVAE_GAN(nn.Module):
     def __init__(self, BATCH_SIZE=64, DATA_LENGTH=256, NUM_CONDITIONS=6):
@@ -236,9 +282,21 @@ class CVAE_GAN(nn.Module):
         self.DATA_LENGTH = DATA_LENGTH
         self.NUM_CONDITIONS = NUM_CONDITIONS
 
-        self.encoder = Encoder(NUM_CONDITIONS = NUM_CONDITIONS)
-        self.decoder = Decoder(NUM_CONDITIONS = NUM_CONDITIONS)
-        self.discriminator = Discriminator(NUM_CONDITIONS= NUM_CONDITIONS)
+        self.encoder = Encoder(
+            NUM_CONDITIONS=NUM_CONDITIONS,
+            BATCH_SIZE=BATCH_SIZE,
+            DATA_LENGTH=DATA_LENGTH
+        )
+
+        self.decoder = Decoder(
+            NUM_CONDITIONS=NUM_CONDITIONS,
+            DATA_LENGTH=DATA_LENGTH
+        )
+
+        self.discriminator = Discriminator(
+            NUM_CONDITIONS=NUM_CONDITIONS,
+            DATA_LENGTH=DATA_LENGTH
+        )
 
         self.encoder.apply(weights_init)
         self.decoder.apply(weights_init)
@@ -250,7 +308,7 @@ class CVAE_GAN(nn.Module):
         std = z_logvar.mul(0.5).exp_()
 
         epsilon = Variable(torch.randn(bs, self.DATA_LENGTH)).to(device)
-        z = z_mean+std*epsilon
+        z = z_mean + std * epsilon
         x_tilda, _ = self.decoder(z, c)
 
         return z_mean, z_logvar, x_tilda

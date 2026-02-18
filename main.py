@@ -8,6 +8,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 from genNetTrainer import GenNetTrainer
+from cvae_gan_trainer import GAN_trainer
 
 BATCH_SIZE = 4
 EPOCHS = 20
@@ -48,7 +49,6 @@ class BeerDataset(Dataset):
         return self.x[idx], self.y[idx]
 
 train_ds = BeerDataset(train_df, fit=True)
-
 test_ds = BeerDataset(
     test_df,
     scaler_x=train_ds.scaler_x,
@@ -61,7 +61,6 @@ train_loader = DataLoader(
     batch_size=BATCH_SIZE,
     shuffle=True
 )
-
 test_loader = DataLoader(
     test_ds,
     batch_size=BATCH_SIZE,
@@ -71,7 +70,17 @@ test_loader = DataLoader(
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 criterion = nn.MSELoss()
 
-trainer = GenNetTrainer(device, criterion)
+# trainer = GenNetTrainer(device, criterion)
 
-trainer.train(train_loader, EPOCHS)
-trainer.test(test_loader)
+# trainer.train(train_loader, EPOCHS)
+# trainer.test(test_loader)
+
+x, y = df.iloc[:, 1:], df.iloc[:, 0:1]
+print(x)
+
+gan_trainer = GAN_trainer(
+                batch_size=4, 
+                data_length=x.shape[1], 
+                num_conditions=1)
+
+x_new, y_new = gan_trainer.train(x, y, times=1)

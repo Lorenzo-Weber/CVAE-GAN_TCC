@@ -72,6 +72,11 @@ class GAN_trainer():
             Usamos o SNV para pre processamento de dados e o MSC para pos processamento
         """
         
+        if isinstance(x_data, pd.DataFrame):
+            x_data = x_data.to_numpy()
+        if isinstance(y_data, pd.DataFrame):
+            y_data = y_data.to_numpy()
+
         scalerx = StandardScaler()
         scalery = StandardScaler()
         snv = SNV()
