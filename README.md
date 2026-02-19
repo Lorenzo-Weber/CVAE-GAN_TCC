@@ -1,3 +1,10 @@
+# TO DO:
+1. Fix a few issues with the linear layers 
+2. Test with multiple datasets
+3. Try different sizes (layers) 
+4. Compare and store results
+5. Adapt the code to make it easier to use
+
 ## CVAE-GAN for NIR Spectra Generation
 
 This repository implements a **CVAE-GAN** (Conditional Variational Autoencoder + Generative Adversarial Network) used in my final graduation project.
