@@ -109,3 +109,8 @@ Effect:
     * First Derivative Penalty
 6.  The generated spectra pass through a final filter before use.
 
+### **Idea for this Repo**
+
+1. I want to compare this approach in various datasets
+2. For now i have 4 different datasets (found on google datasets)
+3. Creating a solid database of results in order to write a paper about this topic
