@@ -1,4 +1,4 @@
-from cvae_gan import  CVAE_GAN
+from cvaegan.cvae_gan import  CVAE_GAN
 import pandas as pd
 import os
 import numpy as np
@@ -8,8 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import torch
 import torch.nn as nn
 import copy
-import matplotlib.pyplot as plt
-from utils import MSC, SNV
+from utils.utils import MSC, SNV
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

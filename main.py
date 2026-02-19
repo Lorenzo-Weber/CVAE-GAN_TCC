@@ -7,17 +7,17 @@ from torch.utils.data import DataLoader, Dataset
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
-from genNetTrainer import GenNetTrainer
-from beerDS import BeerDataset
-from cvae_gan_trainer import GAN_trainer
-from filter import Filter
+from genNet.genNetTrainer import GenNetTrainer
+from utils.beerDS import BeerDataset
+from cvaegan.cvae_gan_trainer import GAN_trainer
+from cvaegan.filter import Filter
 
 BATCH_SIZE = 4
 EPOCHS = 20
 
 torch.manual_seed(42)
 np.random.seed(42)
-df = pd.read_csv('data/beer.csv')
+df = pd.read_csv('data/beerNir/beer.csv')
 
 train_df, test_df = train_test_split(
     df,

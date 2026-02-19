@@ -1,4 +1,4 @@
-from model import GenNet
+from genNet.model import GenNet
 import torch
 import torch.nn.functional as F
 import numpy as np
