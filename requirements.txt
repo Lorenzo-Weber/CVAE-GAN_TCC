@@ -4,3 +4,4 @@ pandas
 scikit_learn
 torch
 PyQt5
+openpyxl
