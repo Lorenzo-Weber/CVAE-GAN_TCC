@@ -13,7 +13,8 @@ from utils.utils import MSC, SNV
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class GAN_trainer():
-    def __init__(self, alpha=0.1, gamma=20, lr=1e-5, batch_size=128, data_length=256, num_conditions=6):
+    def __init__(self, alpha=0.1, gamma=20, lr=1e-5, batch_size=128, data_length=256, num_conditions=6,
+                 latent_dim=64, num_layers=4, base_channels=32, cond_channels=8, dropout=0.3):
 
         """
             Trainer para o CVAE-GAN
@@ -50,8 +51,22 @@ class GAN_trainer():
         self.alpha = alpha
         self.gamma = gamma
         self.NUM_CONDITIONS = num_conditions
+        self.latent_dim = latent_dim
+        self.num_layers = num_layers
+        self.base_channels = base_channels
+        self.cond_channels = cond_channels
+        self.dropout = dropout
 
-        self.model = CVAE_GAN(DATA_LENGTH=self.DATA_LENGTH, NUM_CONDITIONS=self.NUM_CONDITIONS).to(device)
+        # instantiate CVAE_GAN with the modular parameters
+        self.model = CVAE_GAN(
+            data_length=self.DATA_LENGTH,
+            num_conditions=self.NUM_CONDITIONS,
+            latent_dim=self.latent_dim,
+            num_layers=self.num_layers,
+            base_channels=self.base_channels,
+            cond_channels=self.cond_channels,
+            dropout=self.dropout
+        ).to(device)
 
     def diff_loss(self, x):
         dx = x[:, :, 1:] - x[:, :, :-1]
@@ -122,8 +137,8 @@ class GAN_trainer():
                 output_real, _, _ = self.model.discriminator(datav, labelsv)
                 errD_real = criterion(output_real, ones_label)
 
-                mean, logvar, rec_enc = self.model(datav, labelsv)
-                z_p = torch.randn(bs, self.DATA_LENGTH, device=device)
+                mean, logvar, rec_enc, c_recon = self.model(datav, labelsv)
+                z_p = torch.randn(bs, self.latent_dim, device=device)
                 x_p_tilda, _ = self.model.decoder(z_p, labelsv)
 
                 output_rec, _, _ = self.model.discriminator(rec_enc.detach(), labelsv)
@@ -142,8 +157,8 @@ class GAN_trainer():
                 optim_E.zero_grad()
                 optim_D.zero_grad()
 
-                mean, logvar, rec_enc = self.model(datav, labelsv)
-                z_p = torch.randn(bs, self.DATA_LENGTH, device=device)
+                mean, logvar, rec_enc, c_recon = self.model(datav, labelsv)
+                z_p = torch.randn(bs, self.latent_dim, device=device)
                 x_p_tilda, _ = self.model.decoder(z_p, labelsv)
 
                 output_rec_gen, features_rec, _ = self.model.discriminator(rec_enc, labelsv)
@@ -166,7 +181,7 @@ class GAN_trainer():
             val_losses = []
             with torch.no_grad():
                 for val_data, val_labels in val_loader:
-                    val_mean, val_logvar, val_rec = self.model(val_data, val_labels)
+                    val_mean, val_logvar, val_rec, val_c_recon = self.model(val_data, val_labels)
                     val_data_diff = torch.diff(val_data, dim=2)
                     val_rec_diff = torch.diff(val_rec, dim=2)
 
@@ -231,7 +246,7 @@ class GAN_trainer():
 
         z_mean, z_logvar = self.model.encoder(samples_torchx, samples_torchy)
         std = z_logvar.mul(0.5).exp_()
-        epsilon = torch.randn(samples_torchx.size(0), self.DATA_LENGTH).to(device)
+        epsilon = torch.randn(samples_torchx.size(0), self.latent_dim, device=device)
         z = z_mean + std * epsilon
 
         fake_samples, labels = self.model.decoder(z, samples_torchy)

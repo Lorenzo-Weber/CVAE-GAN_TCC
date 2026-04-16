@@ -1,314 +1,271 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def weights_init(m):
-    classname = m.__class__.__name__
-    if classname.find('Conv') != -1:
-        nn.init.normal_(m.weight.data, 0.0, 0.02)
-    elif classname.find('BatchNorm') != -1:
-        nn.init.normal_(m.weight.data, 1.0, 0.02)
-        nn.init.constant_(m.bias.data, 0)
+    if isinstance(m, (nn.Conv1d, nn.ConvTranspose1d, nn.Linear)):
+        nn.init.kaiming_normal_(m.weight, nonlinearity='leaky_relu')
+        if getattr(m, 'bias', None) is not None:
+            nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.BatchNorm1d):
+        nn.init.normal_(m.weight, 1.0, 0.02)
+        nn.init.constant_(m.bias, 0)
+
 
 class Encoder(nn.Module):
-    def __init__(self, NUM_CONDITIONS=6, BATCH_SIZE=64, DATA_LENGTH=256, DROPOUT=0.3):
+    def __init__(self,
+                 data_length=256,
+                 num_conditions=6,
+                 latent_dim=64,
+                 num_layers=4,
+                 base_channels=32,
+                 cond_channels=8,
+                 dropout=0.3):
+        """Modular, dimension-proof 1D encoder.
 
+        - conditions are embedded as additional channels
+        - downsamples by factor ~2**num_layers using Conv1d
+        - uses AdaptiveAvgPool1d to produce fixed-size embedding
         """
-            Encoder do CVAE-GAN
+        super().__init__()
+        self.data_length = data_length
+        self.num_conditions = num_conditions
+        self.latent_dim = latent_dim
+        self.num_layers = num_layers
 
-            Atributos:
-                NUM_CONDITIONS (int): numero de labels que serao usadas
-                BATCH_SIZE (int): tamanho do batch
-                DATA_LENGTH (int): tamanho do espectro
-                DROPOUT (float): taxa de dropout
-
-            Retorna:
-                mean (tensor): media da distribuicao latente
-                logvar (tensor): log da variancia da distribuicao latente
-        """
-
-        super(Encoder, self).__init__()
-
-        self.DATA_LENGTH = DATA_LENGTH
-        self.NUM_CONDITIONS = NUM_CONDITIONS
-
-        self.input = nn.Sequential(
-            nn.Conv1d(1, BATCH_SIZE, 5, padding=2, stride=2),
-            nn.BatchNorm1d(BATCH_SIZE, momentum=0.9),
-            nn.LeakyReLU(0.2),
-        )
-
-        self.conv_blocks = nn.Sequential(
-            nn.Conv1d(BATCH_SIZE, 128, 5, padding=2, stride=2),
-            nn.BatchNorm1d(128, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-            nn.Conv1d(128, DATA_LENGTH, 5, padding=2, stride=2),
-            nn.BatchNorm1d(DATA_LENGTH, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(DATA_LENGTH, 128, 5, padding=2, stride=2),
-            nn.BatchNorm1d(128, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-        )
-
-        self.flatten_dim = self._get_flatten_dim()
-
-        self.fc = nn.Sequential(
-            nn.Linear(self.flatten_dim, 2048),
-            nn.BatchNorm1d(2048, momentum=0.9),
+        # condition projection to extra channels
+        self.cond_proj = nn.Sequential(
+            nn.Linear(num_conditions, cond_channels),
             nn.LeakyReLU(0.2)
         )
 
-        self.fc_mean = nn.Linear(2048, DATA_LENGTH)
-        self.fc_logvar = nn.Linear(2048, DATA_LENGTH)
+        in_channels = 1 + cond_channels
 
-    def _get_flatten_dim(self):
-        with torch.no_grad():
-            dummy_x = torch.zeros(1, 1, self.DATA_LENGTH)
-            dummy_c = torch.zeros(1, self.NUM_CONDITIONS).unsqueeze(1)
-            dummy_concat = torch.cat((dummy_x, dummy_c), dim=-1)
-            out = self.input(dummy_concat)
-            out = self.conv_blocks(out)
-            return out.view(1, -1).shape[1]
+        layers = []
+        channels = []
+        cur_ch = base_channels
+        for i in range(num_layers):
+            out_ch = cur_ch
+            layers += [
+                nn.Conv1d(in_channels, out_ch, kernel_size=4, stride=2, padding=1),
+                nn.BatchNorm1d(out_ch, momentum=0.9),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(dropout)
+            ]
+            channels.append(out_ch)
+            in_channels = out_ch
+            cur_ch = min(cur_ch * 2, 512)
+
+        self.conv = nn.Sequential(*layers)
+
+        # Global pooling to fixed-size feature
+        self.pool = nn.AdaptiveAvgPool1d(1)
+
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(channels[-1] * 1, 256),
+            nn.BatchNorm1d(256, momentum=0.9),
+            nn.LeakyReLU(0.2)
+        )
+
+        self.fc_mean = nn.Linear(256, latent_dim)
+        self.fc_logvar = nn.Linear(256, latent_dim)
 
     def forward(self, x, c):
-        c_reshape = c.unsqueeze(1)
-        concat = torch.cat((x, c_reshape), dim=-1)
+        # x: (B,1,L), c: (B,num_conditions)
+        bc = self.cond_proj(c)  # (B, cond_channels)
+        bc = bc.unsqueeze(-1).expand(-1, -1, x.size(-1))  # (B,cond_channels,L)
+        x = torch.cat([x, bc], dim=1)
 
-        out = self.input(concat)
-        out = self.conv_blocks(out)
-        out = out.view(out.size(0), -1)
+        out = self.conv(x)
+        out = self.pool(out)
         out = self.fc(out)
-
         mean = self.fc_mean(out)
         logvar = self.fc_logvar(out)
-
         return mean, logvar
 
 
 class Decoder(nn.Module):
-    def __init__(self, NUM_CONDITIONS=6, DATA_LENGTH=256, DROPOUT=0.3):
+    def __init__(self,
+                 data_length=256,
+                 num_conditions=6,
+                 latent_dim=64,
+                 num_layers=4,
+                 base_channels=32,
+                 cond_channels=8,
+                 dropout=0.3):
+        """Modular decoder mirroring the encoder."""
+        super().__init__()
+        self.data_length = data_length
+        self.num_conditions = num_conditions
+        self.latent_dim = latent_dim
+        self.num_layers = num_layers
 
-        """
-            Decoder do CVAE-GAN
-
-            Atributos:
-                NUM_CONDITIONS (int): numero de labels que serao usadas
-                DATA_LENGTH (int): tamanho do espectro 
-                DROPOUT (float): taxa de dropout
-            
-            Retorna:
-                x (tensor): espectro reconstruido
-                c_reconstructed (tensor): labels reconstruidas 
-        """
-
-        super(Decoder, self).__init__()
-
-        self.DATA_LENGTH = DATA_LENGTH
-        self.NUM_CONDITIONS = NUM_CONDITIONS
-
-        self.input = nn.Sequential(
-            nn.Linear(DATA_LENGTH + NUM_CONDITIONS, self.DATA_LENGTH * 8),
-            nn.BatchNorm1d(self.DATA_LENGTH * 8, momentum=0.9),
-            nn.LeakyReLU(0.2),
-        )
-
-        self.sequential = nn.Sequential(
-            nn.Unflatten(1, (self.DATA_LENGTH, 8)),
-            nn.ConvTranspose1d(self.DATA_LENGTH, 128, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm1d(128, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-            nn.ConvTranspose1d(128, 64, kernel_size=4, stride=2, padding=1),
-            nn.BatchNorm1d(64, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-            nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1),   
-            nn.BatchNorm1d(32, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.ConvTranspose1d(32, 16, kernel_size=4, stride=2, padding=1),    
-            nn.BatchNorm1d(16, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.ConvTranspose1d(16, 1, kernel_size=3, stride=2, padding=1, output_padding=1), 
-        )
-
-        self.reconstruction_head = nn.Sequential(
-            nn.Linear(DATA_LENGTH, 128), 
-            nn.ReLU(),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, NUM_CONDITIONS) 
-        )
-
-    def forward(self, x, c):
-        z = x
-        concat = torch.cat((x, c), dim=1)
-
-        x = self.input(concat)
-        x = self.sequential(x)
-
-        if x.size(-1) != self.DATA_LENGTH:
-            x = torch.nn.functional.interpolate(
-                x,
-                size=self.DATA_LENGTH,
-                mode="linear",
-                align_corners=False
-            )
-
-        c_reconstructed = self.reconstruction_head(z)
-
-        return x, c_reconstructed
-
-class Discriminator(nn.Module):
-    def __init__(self, NUM_CONDITIONS=6, DATA_LENGTH=256, DROPOUT=0.3):
-
-        """
-            Discriminador do CVAE-GAN
-            
-            Atributos:
-                NUM_CONDITIONS (int): numero de labels que serao usadas
-                DATA_LENGTH (int): tamanho do espectro 
-                DROPOUT (float): taxa de dropout
-
-            Retorna:
-                x (tensor): probabilidade do espectro ser real
-                x1 (tensor): features extraidas do espectro
-                features (tensor): labels preditas pelo discriminador
-        """
-
-        super(Discriminator, self).__init__()
-
-        self.DATA_LENGTH = DATA_LENGTH
-        self.NUM_CONDITIONS = NUM_CONDITIONS
-
-        self.input = nn.Sequential(
-            nn.Conv1d(1, 32, 5, padding=2, stride=1),
+        self.cond_proj = nn.Sequential(
+            nn.Linear(num_conditions, cond_channels),
             nn.LeakyReLU(0.2)
         )
 
-        self.sequential1 = nn.Sequential(
-            nn.Conv1d(32, 128, 5, padding=2, stride=2),
-            nn.BatchNorm1d(128, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-            nn.Conv1d(128, DATA_LENGTH, 5, padding=2, stride=2),
-            nn.BatchNorm1d(DATA_LENGTH, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-            nn.Conv1d(DATA_LENGTH, DATA_LENGTH, 5, padding=2, stride=2),
+        # start channels is the last encoder channel
+        start_ch = min(base_channels * (2 ** (num_layers - 1)), 512)
+
+        self.fc = nn.Sequential(
+            nn.Linear(latent_dim + cond_channels, start_ch),
+            nn.LeakyReLU(0.2)
         )
 
-        self.pool = nn.AdaptiveAvgPool1d(32)
+        layers = []
+        in_ch = start_ch
+        cur_ch = in_ch
+        for i in range(num_layers - 1):
+            out_ch = max(cur_ch // 2, 8)
+            layers += [
+                nn.ConvTranspose1d(cur_ch, out_ch, kernel_size=4, stride=2, padding=1),
+                nn.BatchNorm1d(out_ch, momentum=0.9),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(dropout)
+            ]
+            cur_ch = out_ch
 
-        self.flatten_dim = self._get_flatten_dim()
+        # final conv to single channel
+        layers += [
+            nn.Conv1d(cur_ch, 1, kernel_size=3, stride=1, padding=1),
+            nn.Tanh()
+        ]
 
-        self.classifier = nn.Sequential(
-            nn.Linear(self.flatten_dim, 512),
-            nn.BatchNorm1d(512, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-            nn.Linear(512, 1),
-            nn.Sigmoid()
-        )
+        self.deconv = nn.Sequential(*layers)
 
+        # small head to reconstruct/assist conditions
         self.labels_head = nn.Sequential(
-            nn.BatchNorm1d(DATA_LENGTH, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Dropout(DROPOUT),
-            nn.Conv1d(DATA_LENGTH, 64, 5, padding=2, stride=2),
-            nn.BatchNorm1d(64, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.AdaptiveAvgPool1d(1),
-            nn.Flatten(),
-            nn.Linear(64, 32),
-            nn.BatchNorm1d(32, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Linear(32, NUM_CONDITIONS),
-            nn.ReLU()
+            nn.Linear(latent_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, num_conditions)
         )
 
-    def _get_flatten_dim(self):
-        with torch.no_grad():
-            dummy_x = torch.zeros(1, 1, self.DATA_LENGTH)
-            dummy_c = torch.zeros(1, self.NUM_CONDITIONS).unsqueeze(1)
-            dummy_concat = torch.cat((dummy_x, dummy_c), dim=-1)
-            out = self.input(dummy_concat)
-            out = self.sequential1(out)
-            out = self.pool(out)
-            return out.view(1, -1).shape[1]
+    def forward(self, z, c):
+        # z: (B, latent_dim), c: (B, num_conditions)
+        bc = self.cond_proj(c)  # (B, cond_channels)
+        x = torch.cat([z, bc], dim=1)
+        x = self.fc(x)  # (B, start_ch)
+        # reshape to (B, start_ch, 1)
+        x = x.unsqueeze(-1)
+        x = self.deconv(x)
+
+        # ensure output length matches data_length
+        if x.size(-1) != self.data_length:
+            x = nn.functional.interpolate(x, size=self.data_length, mode='linear', align_corners=False)
+
+        c_recon = self.labels_head(z)
+        return x, c_recon
+
+
+class Discriminator(nn.Module):
+    def __init__(self,
+                 data_length=256,
+                 num_conditions=6,
+                 num_layers=4,
+                 base_channels=32,
+                 cond_channels=8,
+                 dropout=0.3):
+        super().__init__()
+        self.data_length = data_length
+        self.num_conditions = num_conditions
+
+        # condition projection as extra channels
+        self.cond_proj = nn.Sequential(
+            nn.Linear(num_conditions, cond_channels),
+            nn.LeakyReLU(0.2)
+        )
+
+        in_ch = 1 + cond_channels
+        layers = []
+        cur_ch = base_channels
+        for i in range(num_layers):
+            layers += [
+                nn.Conv1d(in_ch, cur_ch, kernel_size=4 if i>0 else 5, stride=2, padding=1),
+                nn.BatchNorm1d(cur_ch, momentum=0.9),
+                nn.LeakyReLU(0.2),
+                nn.Dropout(dropout)
+            ]
+            in_ch = cur_ch
+            cur_ch = min(cur_ch * 2, 512)
+
+        self.conv = nn.Sequential(*layers)
+        self.pool = nn.AdaptiveAvgPool1d(1)
+
+        self.adv_head = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(in_ch * 1, 128),
+            nn.LeakyReLU(0.2),
+            nn.Linear(128, 1)
+        )
+
+        self.label_head = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(in_ch * 1, 128),
+            nn.LeakyReLU(0.2),
+            nn.Linear(128, num_conditions)
+        )
 
     def forward(self, x, c):
-
-        c_reshape = c.unsqueeze(1)
-        concat = torch.cat((x, c_reshape), dim=-1)
-
-        x = self.input(concat)
-        x = self.sequential1(x)
-        
-        x1 = x
-
-        features = self.labels_head(x1)
-
-        x = self.pool(x1)
-        x = x.view(x.size(0), -1)
-        x = self.classifier(x)
-
-        return x, x1, features
+        # x: (B,1,L), c: (B,num_conditions)
+        bc = self.cond_proj(c).unsqueeze(-1).expand(-1, -1, x.size(-1))
+        x = torch.cat([x, bc], dim=1)
+        out = self.conv(x)
+        out = self.pool(out)
+        adv = self.adv_head(out)
+        labels = self.label_head(out)
+        return adv, out, labels
 
 
 class CVAE_GAN(nn.Module):
-    def __init__(self, BATCH_SIZE=64, DATA_LENGTH=256, NUM_CONDITIONS=6):
+    def __init__(self,
+                 data_length=256,
+                 num_conditions=6,
+                 latent_dim=64,
+                 num_layers=4,
+                 base_channels=32,
+                 cond_channels=8,
+                 dropout=0.3):
+        super().__init__()
+        self.data_length = data_length
+        self.num_conditions = num_conditions
+        self.latent_dim = latent_dim
 
-        """
-            Modelo da CVAE-GAN que junta tudo
+        self.encoder = Encoder(data_length=data_length,
+                               num_conditions=num_conditions,
+                               latent_dim=latent_dim,
+                               num_layers=num_layers,
+                               base_channels=base_channels,
+                               cond_channels=cond_channels,
+                               dropout=dropout)
 
-            Atributos:
-                BATCH_SIZE (int): tamanho do batch
-                DATA_LENGTH (int): tamanho do espectro
-                NUM_CONDITIONS (int): numero de labels que serao usadas
-            
-            Retorna:
-                z_mean (tensor): media da distribuicao latente
-                z_logvar (tensor): log da variancia da distribuicao latente
-                x_tilda (tensor): espectro reconstruido
-        """
+        self.decoder = Decoder(data_length=data_length,
+                               num_conditions=num_conditions,
+                               latent_dim=latent_dim,
+                               num_layers=num_layers,
+                               base_channels=base_channels,
+                               cond_channels=cond_channels,
+                               dropout=dropout)
 
-        super(CVAE_GAN, self).__init__()
+        self.discriminator = Discriminator(data_length=data_length,
+                                           num_conditions=num_conditions,
+                                           num_layers=num_layers,
+                                           base_channels=base_channels,
+                                           cond_channels=cond_channels,
+                                           dropout=dropout)
 
-        self.BATCH_SIZE = BATCH_SIZE
-        self.DATA_LENGTH = DATA_LENGTH
-        self.NUM_CONDITIONS = NUM_CONDITIONS
+        self.apply(weights_init)
 
-        self.encoder = Encoder(
-            NUM_CONDITIONS=NUM_CONDITIONS,
-            BATCH_SIZE=BATCH_SIZE,
-            DATA_LENGTH=DATA_LENGTH
-        )
-
-        self.decoder = Decoder(
-            NUM_CONDITIONS=NUM_CONDITIONS,
-            DATA_LENGTH=DATA_LENGTH
-        )
-
-        self.discriminator = Discriminator(
-            NUM_CONDITIONS=NUM_CONDITIONS,
-            DATA_LENGTH=DATA_LENGTH
-        )
-
-        self.encoder.apply(weights_init)
-        self.decoder.apply(weights_init)
-        self.discriminator.apply(weights_init)
+    def reparameterize(self, mean, logvar):
+        std = (0.5 * logvar).exp()
+        eps = torch.randn_like(std, device=std.device)
+        return mean + eps * std
 
     def forward(self, x, c):
-        bs = x.shape[0]
-        z_mean, z_logvar = self.encoder(x, c)
-        std = z_logvar.mul(0.5).exp_()
-
-        epsilon = Variable(torch.randn(bs, self.DATA_LENGTH)).to(device)
-        z = z_mean + std * epsilon
-        x_tilda, _ = self.decoder(z, c)
-
-        return z_mean, z_logvar, x_tilda
+        # x: (B,1,L), c: (B,num_conditions)
+        mean, logvar = self.encoder(x, c)
+        z = self.reparameterize(mean, logvar)
+        x_tilde, c_recon = self.decoder(z, c)
+        return mean, logvar, x_tilde, c_recon

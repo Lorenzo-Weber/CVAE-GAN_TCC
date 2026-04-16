@@ -13,7 +13,7 @@ from cvaegan.cvae_gan_trainer import GAN_trainer
 from cvaegan.filter import Filter
 
 BATCH_SIZE = 4
-EPOCHS = 20
+EPOCHS = 300
 
 torch.manual_seed(42)
 np.random.seed(42)
@@ -31,12 +31,18 @@ y_train = train_df.iloc[:, 0:1]
 gan_trainer = GAN_trainer(
     batch_size=4,
     data_length=x_train.shape[1],
-    num_conditions=1
+    num_conditions=1,
+    # model hyperparameters (tweakable)
+    latent_dim=64,
+    num_layers=4,
+    base_channels=32,
+    cond_channels=8,
+    dropout=0.3
 )
 
-x_new, y_new = gan_trainer.train(x_train, y_train, times=6, epochs=100)
+x_new, y_new = gan_trainer.train(x_train, y_train, times=8, epochs=EPOCHS)
 
-filter = Filter(split=0.05)
+filter = Filter(split=0.1)
 x_filter, y_filter = filter.filter(x_new, y_new, x_train)
 
 fig, ax = plt.subplots()
