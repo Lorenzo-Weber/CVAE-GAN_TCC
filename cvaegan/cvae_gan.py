@@ -35,7 +35,7 @@ class Encoder(nn.Module):
         self.NUM_CONDITIONS = NUM_CONDITIONS
 
         self.input = nn.Sequential(
-            nn.Conv1d(1, BATCH_SIZE, 5, padding=2, stride=2),
+            nn.Conv1d(1 + NUM_CONDITIONS, BATCH_SIZE, 5, padding=2, stride=2),
             nn.BatchNorm1d(BATCH_SIZE, momentum=0.9),
             nn.LeakyReLU(0.2),
         )
@@ -45,19 +45,16 @@ class Encoder(nn.Module):
             nn.BatchNorm1d(128, momentum=0.9),
             nn.LeakyReLU(0.2),
             nn.Dropout(DROPOUT),
-            nn.Conv1d(128, DATA_LENGTH, 5, padding=2, stride=2),
-            nn.BatchNorm1d(DATA_LENGTH, momentum=0.9),
-            nn.LeakyReLU(0.2),
-            nn.Conv1d(DATA_LENGTH, 128, 5, padding=2, stride=2),
+            nn.Conv1d(128, 128, 5, padding=2, stride=2),
             nn.BatchNorm1d(128, momentum=0.9),
             nn.LeakyReLU(0.2),
             nn.Dropout(DROPOUT),
         )
 
-        self.flatten_dim = self._get_flatten_dim()
+        self.global_pool = nn.AdaptiveAvgPool1d(1)
 
         self.fc = nn.Sequential(
-            nn.Linear(self.flatten_dim, 2048),
+            nn.Linear(128, 2048),
             nn.BatchNorm1d(2048, momentum=0.9),
             nn.LeakyReLU(0.2)
         )
@@ -65,22 +62,20 @@ class Encoder(nn.Module):
         self.fc_mean = nn.Linear(2048, DATA_LENGTH)
         self.fc_logvar = nn.Linear(2048, DATA_LENGTH)
 
-    def _get_flatten_dim(self):
-        with torch.no_grad():
-            dummy_x = torch.zeros(1, 1, self.DATA_LENGTH)
-            dummy_c = torch.zeros(1, self.NUM_CONDITIONS).unsqueeze(1)
-            dummy_concat = torch.cat((dummy_x, dummy_c), dim=-1)
-            out = self.input(dummy_concat)
-            out = self.conv_blocks(out)
-            return out.view(1, -1).shape[1]
-
     def forward(self, x, c):
-        c_reshape = c.unsqueeze(1)
-        concat = torch.cat((x, c_reshape), dim=-1)
+
+        if c.dim() == 2:
+            c = c.unsqueeze(-1)
+
+        if c.size(-1) != x.size(-1):
+            c = c.repeat(1, 1, x.size(-1))
+
+        concat = torch.cat((x, c), dim=1)
 
         out = self.input(concat)
         out = self.conv_blocks(out)
-        out = out.view(out.size(0), -1)
+        out = self.global_pool(out)
+        out = out.squeeze(-1)
         out = self.fc(out)
 
         mean = self.fc_mean(out)

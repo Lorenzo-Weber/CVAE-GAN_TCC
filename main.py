@@ -12,6 +12,8 @@ from utils.beerDS import BeerDataset
 from cvaegan.cvae_gan_trainer import GAN_trainer
 from cvaegan.filter import Filter
 
+from cvaegan.cvae_gan import Encoder, Decoder, Discriminator
+
 BATCH_SIZE = 4
 EPOCHS = 20
 
@@ -28,10 +30,11 @@ train_df, test_df = train_test_split(
 x_train = train_df.iloc[:, 1:]
 y_train = train_df.iloc[:, 0:1]
 
+
 gan_trainer = GAN_trainer(
     batch_size=4,
     data_length=x_train.shape[1],
-    num_conditions=1
+    num_conditions=y_train.shape[1]
 )
 
 x_new, y_new = gan_trainer.train(x_train, y_train, times=6, epochs=100)
