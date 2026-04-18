@@ -19,29 +19,29 @@ class Filter():
 
         self.split = split
 
-    def filter(self, fakes, y_fakes, real):
+    def filter(self, x_fakes, y_fakes, real):
 
         """
             Compara os espectros gerados com os reais e seleciona os mais proximos
             Utiliza a distancia euclidiana para medir a proximidade (e vai acumulando a soma)
 
             Atributos:
-                fakes (array): espectros gerados pela CVAE-GAN
+                x_fakes (array): espectros gerados pela CVAE-GAN
                 y_fakes (array): labels dos espectros gerados
                 real (array): espectros reais para comparar
         """
 
         total_dists = []
-        for fake in fakes:
+        for fake in x_fakes:
             dists = np.linalg.norm(real - fake, axis=1)
             total_dists.append(np.sum(np.abs(dists)))
 
         total_dists = np.array(total_dists)
 
-        n_select = int(len(fakes) * self.split)
+        n_select = int(len(x_fakes) * self.split)
         top_indices = np.argsort(total_dists)[:n_select]
 
-        selected_fakes = fakes[top_indices]
+        selected_fakes = x_fakes[top_indices]
         selected_y = y_fakes[top_indices]
 
         print(f'Sobraram {len(selected_fakes)} amostras apos o filtro')

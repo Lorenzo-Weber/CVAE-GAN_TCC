@@ -1,93 +1,134 @@
 import pandas as pd
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset
-from sklearn.model_selection import train_test_split
+import os
 import matplotlib.pyplot as plt
 
-from genNet.genNetTrainer import GenNetTrainer
-from utils.beerDS import BeerDataset
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.svm import SVR
+
 from cvaegan.cvae_gan_trainer import GAN_trainer
 from cvaegan.filter import Filter
-
-from cvaegan.cvae_gan import Encoder, Decoder, Discriminator
+from utils.plotter import Plotter
+from utils.utils import SNV, MSC
 
 BATCH_SIZE = 4
-EPOCHS = 20
+EPOCHS = 50  
 
 torch.manual_seed(42)
 np.random.seed(42)
-df = pd.read_csv('data/beerNir/beer.csv')
+os.makedirs('figs/', exist_ok=True)
 
-train_df, test_df = train_test_split(
-    df,
-    test_size=0.2,
-    random_state=42
+DS_PATH = os.path.join('data/beerNir/')
+DS_FILE = 'beer.csv'
+DS = os.path.join(DS_PATH, DS_FILE)
+
+# ===================== LOAD =====================
+df = pd.read_csv(DS)
+
+x = df.iloc[:, 1:].to_numpy(dtype=np.float32)
+y = df.iloc[:, 0:1].to_numpy(dtype=np.float32)
+
+# ===================== SPLIT =====================
+x_train, x_test, y_train, y_test = train_test_split(
+    x, y, test_size=0.2, random_state=42
 )
 
-x_train = train_df.iloc[:, 1:]
-y_train = train_df.iloc[:, 0:1]
+# ===================== PREPROCESS =====================
+scaler_x = StandardScaler()
+scaler_y = StandardScaler()
 
+snv = SNV()
+msc = MSC()
 
+x_train_scaled = scaler_x.fit_transform(x_train)
+y_train_scaled = scaler_y.fit_transform(y_train)
+
+x_train_snv = snv.fit_transform(x_train_scaled)
+
+# ===================== TENSOR =====================
+x_tensor = torch.tensor(x_train_snv, dtype=torch.float32).unsqueeze(1)
+y_tensor = torch.tensor(y_train_scaled, dtype=torch.float32)
+
+# ===================== DATALOADER =====================
+dataset = TensorDataset(x_tensor, y_tensor)
+
+train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
+val_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False)
+
+# ===================== GAN =====================
 gan_trainer = GAN_trainer(
-    batch_size=4,
-    data_length=x_train.shape[1],
-    num_conditions=y_train.shape[1]
+    num_conditions=1,
+    data_length=x.shape[1],
+    batch_size=BATCH_SIZE
 )
 
-x_new, y_new = gan_trainer.train(x_train, y_train, times=6, epochs=100)
+gan_trainer.train(train_loader, val_loader, epochs=EPOCHS)
 
-filter = Filter(split=0.05)
-x_filter, y_filter = filter.filter(x_new, y_new, x_train)
+# geração
+x_gan, y_gan = gan_trainer.generate(train_loader)
 
-fig, ax = plt.subplots()
+# ===================== TO NUMPY =====================
+x_gan = x_gan.numpy()
+y_gan = y_gan.numpy()
 
-for sample in x_filter:
-    ax.plot(np.arange(len(sample)), sample)
+# ===================== INVERSE PREPROCESS =====================
+x_gan = snv.inverse_transform(x_gan)
+x_gan = scaler_x.inverse_transform(x_gan)
+y_gan = scaler_y.inverse_transform(y_gan)
 
-plt.savefig('figs/gan.png')
-plt.close(fig)
+# ===================== MSC (pós) =====================
+msc.fit(x_train)
+x_gan = msc.transform(x_gan)
 
-synthetic_df = pd.concat(
-    [
-        pd.DataFrame(y_filter, columns=y_train.columns),
-        pd.DataFrame(x_filter, columns=x_train.columns)
-    ],
-    axis=1
-)
+# ===================== FILTER =====================
+filter = Filter()
+x_filtered, y_filtered = filter.filter(x_gan, y_gan, x_train)
 
-train_df = pd.concat(
-    [train_df, synthetic_df],
-    axis=0
-).reset_index(drop=True)
+# ===================== PLOT =====================
+plotter = Plotter()
+plotter.compare_real_vs_generated(x_train, x_filtered, n_samples=4)
 
-train_ds = BeerDataset(train_df, fit=True)
+# ===================== AUGMENT =====================
+if isinstance(x_filtered, torch.Tensor):
+    x_filtered = x_filtered.detach().cpu().numpy()
 
-test_ds = BeerDataset(
-    test_df,
-    scaler_x=train_ds.scaler_x,
-    scaler_y=train_ds.scaler_y,
-    fit=False
-)
+if isinstance(y_filtered, torch.Tensor):
+    y_filtered = y_filtered.detach().cpu().numpy()
 
-train_loader = DataLoader(
-    train_ds,
-    batch_size=BATCH_SIZE,
-    shuffle=True
-)
+if x_filtered.ndim == 3:
+    x_filtered = np.squeeze(x_filtered, axis=1)
 
-test_loader = DataLoader(
-    test_ds,
-    batch_size=BATCH_SIZE,
-    shuffle=False
-)
+x_train_aug = np.concatenate([x_train, x_filtered], axis=0)
+y_train_aug = np.concatenate([y_train, y_filtered], axis=0)
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-criterion = nn.MSELoss()
+# ===================== SVR BASE =====================
+model = Pipeline([
+    ("scaler", StandardScaler()),
+    ("svr", SVR(kernel='poly'))
+])
 
-trainer = GenNetTrainer(device, criterion)
+model.fit(x_train, y_train.squeeze(1))
+y_pred = model.predict(x_test)
 
-trainer.train(train_loader, EPOCHS)
-trainer.test(test_loader)
+print('--- SVR BASE ---')
+print("MSE:", mean_squared_error(y_test, y_pred))
+print("R2:", r2_score(y_test, y_pred))
+
+# ===================== SVR + GAN =====================
+model = Pipeline([
+    ("scaler", StandardScaler()),
+    ("svr", SVR(kernel='poly'))
+])
+
+model.fit(x_train_aug, y_train_aug.squeeze(1))
+y_pred = model.predict(x_test)
+
+print('--- SVR + GAN ---')
+print("MSE:", mean_squared_error(y_test, y_pred))
+print("R2:", r2_score(y_test, y_pred))
