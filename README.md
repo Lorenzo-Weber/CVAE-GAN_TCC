@@ -1,9 +1,8 @@
 # TO DO:
-1. Fix a few issues with the linear layers ----- DONE -----
-2. Test with multiple datasets
-3. Try different sizes (layers) 
-4. Compare and store results
-5. Adapt the code to make it easier to use
+1. Test with multiple datasets
+    1.1 Fix the soil dataset
+2. Try different sizes (layers) 
+3. Compare and store results
 
 ## CVAE-GAN for NIR Spectra Generation
 
