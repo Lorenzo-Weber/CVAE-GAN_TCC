@@ -1,6 +1,8 @@
+import argparse
 import pandas as pd
 import numpy as np
 import os
+import csv
 import matplotlib.pyplot as plt
 
 import torch
@@ -17,118 +19,176 @@ from cvaegan.filter import Filter
 from utils.plotter import Plotter
 from utils.utils import SNV, MSC
 
-BATCH_SIZE = 4
-EPOCHS = 50  
 
-torch.manual_seed(42)
-np.random.seed(42)
-os.makedirs('figs/', exist_ok=True)
+def save_result(split, n_times, mse_base, r2_base, mse_gan, r2_gan):
+    file_exists = os.path.isfile("results.csv")
 
-DS_PATH = os.path.join('data/beerNir/')
-DS_FILE = 'beer.csv'
-DS = os.path.join(DS_PATH, DS_FILE)
+    with open("results.csv", "a", newline="") as f:
+        writer = csv.writer(f)
 
-# ===================== LOAD =====================
-df = pd.read_csv(DS)
+        if not file_exists:
+            writer.writerow([
+                "split", "n_times",
+                "mse_base", "r2_base",
+                "mse_gan", "r2_gan"
+            ])
 
-x = df.iloc[:, 1:].to_numpy(dtype=np.float32)
-y = df.iloc[:, 0:1].to_numpy(dtype=np.float32)
+        writer.writerow([
+            split, n_times,
+            mse_base, r2_base,
+            mse_gan, r2_gan
+        ])
 
-# ===================== SPLIT =====================
-x_train, x_test, y_train, y_test = train_test_split(
-    x, y, test_size=0.2, random_state=42
-)
 
-# ===================== PREPROCESS =====================
-scaler_x = StandardScaler()
-scaler_y = StandardScaler()
+def main():
 
-snv = SNV()
-msc = MSC()
+    # ===================== ARGPARSE =====================
+    parser = argparse.ArgumentParser()
 
-x_train_scaled = scaler_x.fit_transform(x_train)
-y_train_scaled = scaler_y.fit_transform(y_train)
+    parser.add_argument("--batch_size", type=int, default=8)
+    parser.add_argument("--epochs", type=int, default=80)
+    parser.add_argument("--n_times", type=int, default=8)
+    parser.add_argument("--split", type=float, default=0.08)
 
-x_train_snv = snv.fit_transform(x_train_scaled)
+    args = parser.parse_args()
 
-# ===================== TENSOR =====================
-x_tensor = torch.tensor(x_train_snv, dtype=torch.float32).unsqueeze(1)
-y_tensor = torch.tensor(y_train_scaled, dtype=torch.float32)
+    BATCH_SIZE = args.batch_size
+    EPOCHS = args.epochs
+    N_TIMES = args.n_times
+    SPLIT = args.split
 
-# ===================== DATALOADER =====================
-dataset = TensorDataset(x_tensor, y_tensor)
+    # ===================== SEED =====================
+    torch.manual_seed(42)
+    np.random.seed(42)
+    os.makedirs('figs/', exist_ok=True)
 
-train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, drop_last=True)
-val_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False)
+    # ===================== LOAD =====================
+    DS_PATH = os.path.join('data/beerNir/')
+    DS_FILE = 'beer.csv'
+    DS = os.path.join(DS_PATH, DS_FILE)
 
-# ===================== GAN =====================
-gan_trainer = GAN_trainer(
-    num_conditions=1,
-    data_length=x.shape[1],
-    batch_size=BATCH_SIZE
-)
+    df = pd.read_csv(DS)
 
-gan_trainer.train(train_loader, val_loader, epochs=EPOCHS)
+    x = df.iloc[:, 1:].to_numpy(dtype=np.float32)
+    y = df.iloc[:, 0:1].to_numpy(dtype=np.float32)
 
-# geração
-x_gan, y_gan = gan_trainer.generate(train_loader)
+    # ===================== SPLIT =====================
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=0.2, random_state=42
+    )
 
-# ===================== TO NUMPY =====================
-x_gan = x_gan.numpy()
-y_gan = y_gan.numpy()
+    # ===================== PREPROCESS =====================
+    scaler_x = StandardScaler()
+    scaler_y = StandardScaler()
 
-# ===================== INVERSE PREPROCESS =====================
-x_gan = snv.inverse_transform(x_gan)
-x_gan = scaler_x.inverse_transform(x_gan)
-y_gan = scaler_y.inverse_transform(y_gan)
+    snv = SNV()
+    msc = MSC()
 
-# ===================== MSC (pós) =====================
-msc.fit(x_train)
-x_gan = msc.transform(x_gan)
+    x_train_scaled = scaler_x.fit_transform(x_train)
+    y_train_scaled = scaler_y.fit_transform(y_train)
 
-# ===================== FILTER =====================
-filter = Filter()
-x_filtered, y_filtered = filter.filter(x_gan, y_gan, x_train)
+    x_train_snv = snv.fit_transform(x_train_scaled)
 
-# ===================== PLOT =====================
-plotter = Plotter()
-plotter.compare_real_vs_generated(x_train, x_filtered, n_samples=4)
+    # ===================== TENSOR =====================
+    x_tensor = torch.tensor(x_train_snv, dtype=torch.float32).unsqueeze(1)
+    y_tensor = torch.tensor(y_train_scaled, dtype=torch.float32)
 
-# ===================== AUGMENT =====================
-if isinstance(x_filtered, torch.Tensor):
-    x_filtered = x_filtered.detach().cpu().numpy()
+    # ===================== DATALOADER =====================
+    dataset = TensorDataset(x_tensor, y_tensor)
 
-if isinstance(y_filtered, torch.Tensor):
-    y_filtered = y_filtered.detach().cpu().numpy()
+    train_loader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        drop_last=True
+    )
 
-if x_filtered.ndim == 3:
-    x_filtered = np.squeeze(x_filtered, axis=1)
+    val_loader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False
+    )
 
-x_train_aug = np.concatenate([x_train, x_filtered], axis=0)
-y_train_aug = np.concatenate([y_train, y_filtered], axis=0)
+    # ===================== GAN =====================
+    gan_trainer = GAN_trainer(
+        num_conditions=1,
+        data_length=x.shape[1],
+        batch_size=BATCH_SIZE,
+    )
 
-# ===================== SVR BASE =====================
-model = Pipeline([
-    ("scaler", StandardScaler()),
-    ("svr", SVR(kernel='poly'))
-])
+    gan_trainer.train(train_loader, val_loader, epochs=EPOCHS)
 
-model.fit(x_train, y_train.squeeze(1))
-y_pred = model.predict(x_test)
+    # ===================== GENERATE =====================
+    x_gan, y_gan = gan_trainer.generate(train_loader, n_times=N_TIMES)
 
-print('--- SVR BASE ---')
-print("MSE:", mean_squared_error(y_test, y_pred))
-print("R2:", r2_score(y_test, y_pred))
+    x_gan = x_gan.numpy()
+    y_gan = y_gan.numpy()
 
-# ===================== SVR + GAN =====================
-model = Pipeline([
-    ("scaler", StandardScaler()),
-    ("svr", SVR(kernel='poly'))
-])
+    # ===================== INVERSE PREPROCESS =====================
+    x_gan = snv.inverse_transform(x_gan)
+    x_gan = scaler_x.inverse_transform(x_gan)
+    y_gan = scaler_y.inverse_transform(y_gan)
 
-model.fit(x_train_aug, y_train_aug.squeeze(1))
-y_pred = model.predict(x_test)
+    # ===================== MSC =====================
+    msc.fit(x_train)
+    x_gan = msc.transform(x_gan)
 
-print('--- SVR + GAN ---')
-print("MSE:", mean_squared_error(y_test, y_pred))
-print("R2:", r2_score(y_test, y_pred))
+    # ===================== FILTER =====================
+    filter = Filter(split=SPLIT)
+    x_filtered, y_filtered = filter.filter(x_gan, y_gan, x_train)
+
+    # ===================== PLOT =====================
+    plotter = Plotter()
+    plotter.compare_real_vs_generated(x_train, x_filtered, n_samples=4)
+
+    # ===================== AUGMENT =====================
+    if isinstance(x_filtered, torch.Tensor):
+        x_filtered = x_filtered.detach().cpu().numpy()
+
+    if isinstance(y_filtered, torch.Tensor):
+        y_filtered = y_filtered.detach().cpu().numpy()
+
+    if x_filtered.ndim == 3:
+        x_filtered = np.squeeze(x_filtered, axis=1)
+
+    x_train_aug = np.concatenate([x_train, x_filtered], axis=0)
+    y_train_aug = np.concatenate([y_train, y_filtered], axis=0)
+
+    # ===================== SVR BASE =====================
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("svr", SVR(kernel='poly'))
+    ])
+
+    model.fit(x_train, y_train.squeeze(1))
+    y_pred_base = model.predict(x_test)
+
+    mse_base = mean_squared_error(y_test, y_pred_base)
+    r2_base = r2_score(y_test, y_pred_base)
+
+    print('--- SVR BASE ---')
+    print("MSE:", mse_base)
+    print("R2:", r2_base)
+
+    # ===================== SVR + GAN =====================
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("svr", SVR(kernel='poly'))
+    ])
+
+    model.fit(x_train_aug, y_train_aug.squeeze(1))
+    y_pred_gan = model.predict(x_test)
+
+    mse_gan = mean_squared_error(y_test, y_pred_gan)
+    r2_gan = r2_score(y_test, y_pred_gan)
+
+    print('--- SVR + GAN ---')
+    print("MSE:", mse_gan)
+    print("R2:", r2_gan)
+
+    # ===================== SAVE =====================
+    save_result(SPLIT, N_TIMES, mse_base, r2_base, mse_gan, r2_gan)
+
+
+if __name__ == "__main__":
+    main()

@@ -7,9 +7,19 @@ from cvaegan.cvae_gan import CVAE_GAN
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
 class GAN_trainer():
-    def __init__(self, alpha=0.1, gamma=20, lr=1e-5,
-                 batch_size=32, data_length=256, num_conditions=1):
+    def __init__(
+        self,
+        alpha=0.1,
+        gamma=20,
+        lr=1e-5,
+        batch_size=32,
+        data_length=256,
+        num_conditions=1,
+        generator_layer_sizes=[128, 128],
+        discriminator_layer_sizes=[128, 256, 256]
+    ):
 
         self.BATCH_SIZE = batch_size
         self.DATA_LENGTH = data_length
@@ -18,12 +28,17 @@ class GAN_trainer():
         self.gamma = gamma
         self.NUM_CONDITIONS = num_conditions
 
+        # 👉 novos parâmetros
+        self.generator_layer_sizes = list(generator_layer_sizes)
+        self.discriminator_layer_sizes = list(discriminator_layer_sizes)
+
         self.model = CVAE_GAN(
             DATA_LENGTH=self.DATA_LENGTH,
-            NUM_CONDITIONS=self.NUM_CONDITIONS
+            NUM_CONDITIONS=self.NUM_CONDITIONS,
+            generator_layer_sizes=self.generator_layer_sizes,
+            discriminator_layer_sizes=self.discriminator_layer_sizes
         ).to(device)
 
-        # losses separadas (correto)
         self.adv_loss = nn.BCEWithLogitsLoss()
         self.rec_loss_fn = nn.MSELoss()
 
