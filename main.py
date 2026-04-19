@@ -48,7 +48,7 @@ def main():
     parser.add_argument("--batch_size", type=int, default=8)
     parser.add_argument("--epochs", type=int, default=80)
     parser.add_argument("--n_times", type=int, default=8)
-    parser.add_argument("--split", type=float, default=0.08)
+    parser.add_argument("--split", type=float, default=0.14)
 
     args = parser.parse_args()
 
