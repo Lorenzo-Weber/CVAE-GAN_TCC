@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.svm import SVR
+from sklearn.multioutput import MultiOutputRegressor
 
 from cvaegan.cvae_gan_trainer import GAN_trainer
 from cvaegan.filter import Filter
@@ -73,15 +74,19 @@ def main():
     os.makedirs('figs/', exist_ok=True)
 
     # ===================== LOAD =====================
-    PATH = os.path.join('data', 'beerNir')
-    FILE_NAME = 'beer'
-    DATA_TYPE = '.csv'
+    PATH = os.path.join('data', 'soilNIR')
+    FILE_NAME = 'DataResearch'
+    DATA_TYPE = '.xlsx'
+    SHEET_NAME = 'Raw spectral'
     DS = os.path.join(PATH, FILE_NAME + DATA_TYPE)
 
-    df = pd.read_csv(DS)
+    if DATA_TYPE == '.csv':
+        df = pd.read_csv(DS)
+    else:
+        df = pd.read_excel(DS, sheet_name=SHEET_NAME)
 
-    x = df.iloc[:, 1:].to_numpy(dtype=np.float32)
-    y = df.iloc[:, 0:1].to_numpy(dtype=np.float32)
+    x = df.iloc[:, 1:-2].to_numpy(dtype=np.float32)
+    y = df.iloc[:, -2:].to_numpy(dtype=np.float32)
 
     print(f'Features shape: {x.shape}')
     print(f'Labels shape: {y.shape}')
@@ -174,10 +179,10 @@ def main():
     # ===================== SVR BASE =====================
     model = Pipeline([
         ("scaler", StandardScaler()),
-        ("svr", SVR(kernel='poly'))
+        ("svr", MultiOutputRegressor(SVR(kernel='poly')))
     ])
 
-    model.fit(x_train, y_train.squeeze(1))
+    model.fit(x_train, y_train)
     y_pred_base = model.predict(x_test)
 
     mse_base = mean_squared_error(y_test, y_pred_base)
@@ -190,10 +195,10 @@ def main():
     # ===================== SVR + GAN =====================
     model = Pipeline([
         ("scaler", StandardScaler()),
-        ("svr", SVR(kernel='poly'))
+        ("svr", MultiOutputRegressor(SVR(kernel='poly')))
     ])
 
-    model.fit(x_train_aug, y_train_aug.squeeze(1))
+    model.fit(x_train_aug, y_train_aug)
     y_pred_gan = model.predict(x_test)
 
     mse_gan = mean_squared_error(y_test, y_pred_gan)

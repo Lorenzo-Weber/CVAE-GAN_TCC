@@ -1,6 +1,5 @@
 # TO DO:
 1. Test with multiple datasets
-    1.1 Fix the soil dataset
 2. Try different sizes (layers) 
 3. Compare and store results
 
