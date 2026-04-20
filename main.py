@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import os
 import csv
-import matplotlib.pyplot as plt
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -20,13 +19,20 @@ from utils.plotter import Plotter
 from utils.utils import SNV, MSC
 
 
-def save_result(split, n_times, mse_base, r2_base, mse_gan, r2_gan):
-    file_exists = os.path.isfile("results.csv")
+def save_result(split, n_times, mse_base, r2_base, mse_gan, r2_gan, filename, run_id):
 
-    with open("results.csv", "a", newline="") as f:
+    RESULTS_PATH = 'results'
+    os.makedirs(RESULTS_PATH, exist_ok=True)
+
+    file_path = os.path.join(RESULTS_PATH, f"{filename}_{run_id}.csv")
+
+    file_exists = os.path.isfile(file_path)
+    file_not_empty = file_exists and os.path.getsize(file_path) > 0
+
+    with open(file_path, "a", newline="") as f:
         writer = csv.writer(f)
 
-        if not file_exists:
+        if not file_not_empty:
             writer.writerow([
                 "split", "n_times",
                 "mse_base", "r2_base",
@@ -39,7 +45,7 @@ def save_result(split, n_times, mse_base, r2_base, mse_gan, r2_gan):
             mse_gan, r2_gan
         ])
 
-
+        
 def main():
 
     # ===================== ARGPARSE =====================
@@ -50,12 +56,16 @@ def main():
     parser.add_argument("--n_times", type=int, default=8)
     parser.add_argument("--split", type=float, default=0.14)
 
+    parser.add_argument("--run_id", type=str, required=True)
+    parser.add_argument("--save_results", action="store_true")
+
     args = parser.parse_args()
 
     BATCH_SIZE = args.batch_size
     EPOCHS = args.epochs
     N_TIMES = args.n_times
     SPLIT = args.split
+    RUN_ID = args.run_id
 
     # ===================== SEED =====================
     torch.manual_seed(42)
@@ -63,9 +73,10 @@ def main():
     os.makedirs('figs/', exist_ok=True)
 
     # ===================== LOAD =====================
-    DS_PATH = os.path.join('data/beerNir/')
-    DS_FILE = 'beer.csv'
-    DS = os.path.join(DS_PATH, DS_FILE)
+    PATH = os.path.join('data/beerNir/')
+    FILE_NAME = 'beer'
+    DATA_TYPE = '.csv'
+    DS = os.path.join(PATH, FILE_NAME + DATA_TYPE)
 
     df = pd.read_csv(DS)
 
@@ -187,7 +198,14 @@ def main():
     print("R2:", r2_gan)
 
     # ===================== SAVE =====================
-    save_result(SPLIT, N_TIMES, mse_base, r2_base, mse_gan, r2_gan)
+    if args.save_results:
+        save_result(
+            SPLIT, N_TIMES,
+            mse_base, r2_base,
+            mse_gan, r2_gan,
+            filename=FILE_NAME,
+            run_id=RUN_ID
+        )
 
 
 if __name__ == "__main__":
