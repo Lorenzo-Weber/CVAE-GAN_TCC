@@ -22,8 +22,8 @@ class Plotter:
         self,
         x_real,
         x_fake,
+        filename = '',
         n_samples=10,
-        filename="fake_vs_real.png",
         same_scale=True
     ):
         x_real = self._to_numpy(x_real)
@@ -60,7 +60,7 @@ class Plotter:
 
         plt.tight_layout()
 
-        path = os.path.join(self.save_dir, filename)
+        path = os.path.join(self.save_dir, filename + '.png')
         plt.savefig(path)
         plt.close()
 

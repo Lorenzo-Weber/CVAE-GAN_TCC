@@ -156,7 +156,7 @@ def main():
 
     # ===================== PLOT =====================
     plotter = Plotter()
-    plotter.compare_real_vs_generated(x_train, x_filtered, n_samples=4)
+    plotter.compare_real_vs_generated(x_train, x_filtered, n_samples=4, filename=FILE_NAME)
 
     # ===================== AUGMENT =====================
     if isinstance(x_filtered, torch.Tensor):
