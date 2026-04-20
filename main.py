@@ -19,7 +19,7 @@ from utils.plotter import Plotter
 from utils.utils import SNV, MSC
 
 
-def save_result(split, n_times, mse_base, r2_base, mse_gan, r2_gan, filename, run_id):
+def save_result(split, n_times, mse_base, r2_base, mse_gan, r2_gan, filename, run_id=''):
 
     RESULTS_PATH = 'results'
     os.makedirs(RESULTS_PATH, exist_ok=True)
@@ -45,7 +45,7 @@ def save_result(split, n_times, mse_base, r2_base, mse_gan, r2_gan, filename, ru
             mse_gan, r2_gan
         ])
 
-        
+
 def main():
 
     # ===================== ARGPARSE =====================
@@ -56,7 +56,7 @@ def main():
     parser.add_argument("--n_times", type=int, default=8)
     parser.add_argument("--split", type=float, default=0.14)
 
-    parser.add_argument("--run_id", type=str, required=True)
+    parser.add_argument("--run_id", type=str)
     parser.add_argument("--save_results", action="store_true")
 
     args = parser.parse_args()
@@ -73,7 +73,7 @@ def main():
     os.makedirs('figs/', exist_ok=True)
 
     # ===================== LOAD =====================
-    PATH = os.path.join('data/beerNir/')
+    PATH = os.path.join('data', 'beerNir')
     FILE_NAME = 'beer'
     DATA_TYPE = '.csv'
     DS = os.path.join(PATH, FILE_NAME + DATA_TYPE)
@@ -82,6 +82,12 @@ def main():
 
     x = df.iloc[:, 1:].to_numpy(dtype=np.float32)
     y = df.iloc[:, 0:1].to_numpy(dtype=np.float32)
+
+    print(f'Features shape: {x.shape}')
+    print(f'Labels shape: {y.shape}')
+
+    NUM_FEATURES = x.shape[1]
+    NUM_CONDITIONS = y.shape[1]
 
     # ===================== SPLIT =====================
     x_train, x_test, y_train, y_test = train_test_split(
@@ -122,8 +128,8 @@ def main():
 
     # ===================== GAN =====================
     gan_trainer = GAN_trainer(
-        num_conditions=1,
-        data_length=x.shape[1],
+        num_conditions=NUM_CONDITIONS,
+        data_length=NUM_FEATURES,
         batch_size=BATCH_SIZE,
     )
 
