@@ -3,7 +3,7 @@ from concurrent.futures import ProcessPoolExecutor
 import os
 import uuid
 
-MAX_GPU_PROCESSES = 2
+MAX_GPU_PROCESSES = 4
 
 def run_experiment(params):
     split, n_times, run_id = params
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     run_id = uuid.uuid4().hex[:8]
 
-    splits = [round(0.01 + i * 0.01, 2) for i in range(20)]
+    splits = [round(0.01 + i * 0.02, 2) for i in range(40)]
     n_times_list = list(range(2, 9))
 
     params = [(s, n, run_id) for s in splits for n in n_times_list]
