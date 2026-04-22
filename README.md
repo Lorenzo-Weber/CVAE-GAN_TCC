@@ -29,4 +29,3 @@ This adversarial process forces the generator to produce increasingly realistic 
 
 # Notes:
 
-For the beer Dataset it seems that generating the dataset 8 times, keeping 0.15, a batch size of 8 and training for 80 epochs works the best. MSE dropped from 0.800 to 0.709.

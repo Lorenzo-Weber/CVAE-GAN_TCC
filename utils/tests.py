@@ -29,10 +29,11 @@ if __name__ == "__main__":
 
     run_id = uuid.uuid4().hex[:8]
 
-    splits = [round(0.01 + i * 0.02, 2) for i in range(40)]
-    n_times_list = list(range(2, 9))
+    for _ in range(3):
+        splits = [round(0.01 + i * 0.01, 2) for i in range(20)]
+        n_times_list = list(range(1, 10))
 
-    params = [(s, n, run_id) for s in splits for n in n_times_list]
+        params = [(s, n, run_id) for s in splits for n in n_times_list]
 
-    with ProcessPoolExecutor(max_workers=MAX_GPU_PROCESSES) as executor:
-        executor.map(run_experiment, params)
+        with ProcessPoolExecutor(max_workers=MAX_GPU_PROCESSES) as executor:
+            executor.map(run_experiment, params)

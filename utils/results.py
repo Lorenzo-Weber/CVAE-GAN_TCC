@@ -5,7 +5,7 @@ import os
 def print_metrics(results, model_prefix, display_name):
     print(f'{"="*15} {display_name} {"="*15}')
 
-    for variant in ['base', 'gan']:
+    for variant in ['base', 'gan', 'shift']:
         mse_col = f'mse_{model_prefix}_{variant}'
         r2_col = f'r2_{model_prefix}_{variant}'
 
@@ -25,6 +25,7 @@ def print_metrics(results, model_prefix, display_name):
         print(f'split: {best_r2_row["split"]}, \t\t n_times: {int(best_r2_row["n_times"])}')
         print(f'MSE Score with this config: {best_r2_row[mse_col]:.4f}')
         print()
+
     print("\n")
 
 def main():
