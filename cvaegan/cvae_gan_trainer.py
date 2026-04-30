@@ -28,7 +28,6 @@ class GAN_trainer():
         self.gamma = gamma
         self.NUM_CONDITIONS = num_conditions
 
-        # 👉 novos parâmetros
         self.generator_layer_sizes = list(generator_layer_sizes)
         self.discriminator_layer_sizes = list(discriminator_layer_sizes)
 

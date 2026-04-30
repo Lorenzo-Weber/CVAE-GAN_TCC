@@ -6,7 +6,7 @@ import os
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
@@ -45,6 +45,9 @@ def main():
     SHEET_NAME = 'Raw spectral'
     DS = os.path.join(PATH, FILE_NAME + DATA_TYPE)
 
+    GENERATOR_LAYERS = [64]
+    DISCRIMINATOR_LAYERS = [64]
+
     BATCH_SIZE = args.batch_size
     EPOCHS = args.epochs
     N_TIMES = args.n_times
@@ -52,8 +55,8 @@ def main():
     RUN_ID = args.run_id
 
     # Will remove later for testing
-    # torch.manual_seed(42)
-    # np.random.seed(42)
+    # torch.manual_seed(30)
+    # np.random.seed(30)
 
     os.makedirs('figs/', exist_ok=True)
 
@@ -111,8 +114,8 @@ def main():
         num_conditions=NUM_CONDITIONS,
         data_length=NUM_FEATURES,
         batch_size=BATCH_SIZE,
-        generator_layer_sizes=[64],
-        discriminator_layer_sizes=[64]
+        generator_layer_sizes=GENERATOR_LAYERS,
+        discriminator_layer_sizes=DISCRIMINATOR_LAYERS
     )
 
     # Training the GAN and generating the data
@@ -181,20 +184,24 @@ def main():
 
     mse_base = mean_squared_error(y_test, y_pred_base)
     r2_base = r2_score(y_test, y_pred_base)
+    mae_base = mean_absolute_error(y_test, y_pred_base)
 
     print('--- SVR BASE ---')
     print("MSE:", mse_base)
     print("R2:", r2_base)
+    print("MAE: ", mae_base)
 
     model.fit(x_train_aug, y_train_aug)
     y_pred_gan = model.predict(x_test)
 
     mse_gan = mean_squared_error(y_test, y_pred_gan)
     r2_gan = r2_score(y_test, y_pred_gan)
+    mae_gan = mean_absolute_error(y_test, y_pred_gan)
 
     print('--- SVR + GAN ---')
     print("MSE:", mse_gan)
     print("R2:", r2_gan)
+    print("MAE:", mae_gan)
 
     # ===== SHIFT =====
     model.fit(x_train_shift, y_train_shift)
@@ -202,10 +209,12 @@ def main():
 
     mse_shift = mean_squared_error(y_test, y_pred_shift)
     r2_shift = r2_score(y_test, y_pred_shift)
+    mae_shift = mean_absolute_error(y_test, y_pred_shift)
 
     print('--- SVR + SHIFT ---')
     print("MSE:", mse_shift)
     print("R2:", r2_shift)
+    print("MAE:", mae_shift)
 
     # ===================== PLS =====================
     n_components = min(10, x_train.shape[0] - 1)
@@ -220,20 +229,24 @@ def main():
 
     mse_base_pls = mean_squared_error(y_test, y_pred_base_pls)
     r2_base_pls = r2_score(y_test, y_pred_base_pls)
+    mae_base_pls = mean_absolute_error(y_test, y_pred_base_pls)
 
     print('--- PLS BASE ---')
     print("MSE:", mse_base_pls)
     print("R2:", r2_base_pls)
+    print("MAE", mae_base_pls)
 
     pls_model.fit(x_train_aug, y_train_aug)
     y_pred_gan_pls = pls_model.predict(x_test)
 
     mse_gan_pls = mean_squared_error(y_test, y_pred_gan_pls)
     r2_gan_pls = r2_score(y_test, y_pred_gan_pls)
+    mae_gan_pls = mean_absolute_error(y_test, y_pred_gan_pls)
 
     print('--- PLS + GAN ---')
     print("MSE:", mse_gan_pls)
     print("R2:", r2_gan_pls)
+    print("MAE:", mae_gan_pls)
 
     # ===== SHIFT =====
     pls_model.fit(x_train_shift, y_train_shift)
@@ -241,10 +254,12 @@ def main():
 
     mse_shift_pls = mean_squared_error(y_test, y_pred_shift_pls)
     r2_shift_pls = r2_score(y_test, y_pred_shift_pls)
+    mae_shift_pls = mean_absolute_error(y_test, y_pred_shift_pls)
 
     print('--- PLS + SHIFT ---')
     print("MSE:", mse_shift_pls)
     print("R2:", r2_shift_pls)
+    print("MAE:", mae_shift_pls)
 
     # ===================== RANDOM FOREST =====================
     # Maybe i can remove the random state on the final step of testing
@@ -255,20 +270,24 @@ def main():
 
     mse_base_rf = mean_squared_error(y_test, y_pred_base_rf)
     r2_base_rf = r2_score(y_test, y_pred_base_rf)
+    mae_base_rf = mean_absolute_error(y_test, y_pred_base_rf)
 
     print('--- RF BASE ---')
     print("MSE:", mse_base_rf)
     print("R2:", r2_base_rf)
+    print("MAE:", mae_base_rf)
 
     rf.fit(x_train_aug, y_train_aug)
     y_pred_gan_rf = rf.predict(x_test)
 
     mse_gan_rf = mean_squared_error(y_test, y_pred_gan_rf)
     r2_gan_rf = r2_score(y_test, y_pred_gan_rf)
+    mae_gan_rf = mean_absolute_error(y_test, y_pred_gan_rf)
 
     print('--- RF + GAN ---')
     print("MSE:", mse_gan_rf)
     print("R2:", r2_gan_rf)
+    print("MAE:", mae_gan_rf)
 
     # ===== SHIFT =====
     rf.fit(x_train_shift, y_train_shift)
@@ -276,10 +295,12 @@ def main():
 
     mse_shift_rf = mean_squared_error(y_test, y_pred_shift_rf)
     r2_shift_rf = r2_score(y_test, y_pred_shift_rf)
+    mae_shift_rf = mean_absolute_error(y_test, y_pred_shift_rf)
 
     print('--- RF + SHIFT ---')
     print("MSE:", mse_shift_rf)
     print("R2:", r2_shift_rf)
+    print("MAE:", mae_shift_rf)
 
     if args.save_results:
 
@@ -288,21 +309,22 @@ def main():
             SPLIT, N_TIMES,
 
             # SVR
-            mse_base, r2_base,
-            mse_gan, r2_gan,
-            mse_shift, r2_shift,
+            mse_base, r2_base, mae_base,
+            mse_gan, r2_gan, mae_gan,
+            mse_shift, r2_shift, mae_shift,
 
             # PLS
-            mse_base_pls, r2_base_pls,
-            mse_gan_pls, r2_gan_pls,
-            mse_shift_pls, r2_shift_pls,
+            mse_base_pls, r2_base_pls, mae_base_pls,
+            mse_gan_pls, r2_gan_pls, mae_gan_pls,
+            mse_shift_pls, r2_shift_pls, mae_shift_pls,
 
             # RF
-            mse_base_rf, r2_base_rf,
-            mse_gan_rf, r2_gan_rf,
-            mse_shift_rf, r2_shift_rf,
+            mse_base_rf, r2_base_rf, mae_base_rf,
+            mse_gan_rf, r2_gan_rf, mae_gan_rf,
+            mse_shift_rf, r2_shift_rf, mae_shift_rf,
 
             filename=FILE_NAME,
+            architecture=(GENERATOR_LAYERS, DISCRIMINATOR_LAYERS),
             run_id=RUN_ID
         )
 if __name__ == "__main__":
