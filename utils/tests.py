@@ -30,8 +30,8 @@ if __name__ == "__main__":
     run_id = uuid.uuid4().hex[:8]
 
     for _ in range(3):
-        splits = [round(0.01 + i * 0.01, 2) for i in range(20)]
-        n_times_list = list(range(1, 10))
+        splits = [round(0.03 + i * 0.02, 2) for i in range(10)]
+        n_times_list = list(range(2, 9))
 
         params = [(s, n, run_id) for s in splits for n in n_times_list]
 

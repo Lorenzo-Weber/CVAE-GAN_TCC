@@ -1,73 +1,43 @@
 import pandas as pd
-import argparse
 import os
 import json
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--file",
-        type=str,
-        required=True,
-        help="CSV file name (without extension) inside results/"
-    )
-    parser.add_argument(
-        "--save",
-        action="store_true",
-        help="Save the averaged results to a new CSV"
-    )
+PATH = 'results/'
+FILE_NAME = 'results.csv'
+FILE_EXTENTION = FILE_NAME.split('.')[1]
+FILE = os.path.join(PATH, FILE_NAME)
 
-    args = parser.parse_args()
+FILE_WO_EXT = FILE_NAME.split('.')[0]
+JSON_PATH = os.path.join(PATH, 'avg_' + FILE_WO_EXT + '.json')  
 
-    PATH = "results"
-    input_path = os.path.join(PATH, args.file + ".csv")
+if FILE_EXTENTION == 'csv':
+    results = pd.read_csv(FILE)
+elif FILE_EXTENTION == 'xlsx':
+    results = pd.read_excel(FILE)
 
-    if not os.path.exists(input_path):
-        raise FileNotFoundError(f"File not found: {input_path}")
+metrics = ["mse", "r2", "mae"]
+models = ["svr", "pls", "rf"]
+variants = ["base", "gan", "shift"]
 
-    # --- Load data ---
-    df = pd.read_csv(input_path)
+stats = {}
 
-    # --- Garantir que métricas são numéricas ---
-    metric_cols = [col for col in df.columns if col.startswith(("mse_", "r2_", "mae_"))]
-    df[metric_cols] = df[metric_cols].apply(pd.to_numeric, errors="coerce")
+for model in models:
+    stats[model.upper()] = {}
+    
+    for m in metrics:
+        stats[model.upper()][m] = {}
+        
+        for v in variants:
+            col = f"{m}_{model}_{v}"
+            
+            mean = float(results[col].mean())
+            std = float(results[col].std())
+            
+            stats[model.upper()][m][v] = {
+                "mean": mean,
+                "std": std
+            }
 
-    # --- Validar presença das colunas de arquitetura ---
-    if "generator" not in df.columns or "discriminator" not in df.columns:
-        raise ValueError("CSV não contém colunas 'generator' e 'discriminator'")
+with open(JSON_PATH, "w") as f:
+    json.dump(stats, f, indent=4)
 
-    # --- Normalizar JSON (opcional, mas robusto) ---
-    df["generator"] = df["generator"].apply(lambda x: json.dumps(json.loads(x)))
-    df["discriminator"] = df["discriminator"].apply(lambda x: json.dumps(json.loads(x)))
-
-    # --- Agrupar por configuração ---
-    group_cols = ["generator", "discriminator", "split", "n_times"]
-
-    df_avg = (
-        df.groupby(group_cols, as_index=False)[metric_cols]
-        .mean()
-        .sort_values(by="mse_svr_base")  # critério default
-    )
-
-    print("\n=== AVERAGED RESULTS (per configuration) ===\n")
-    print(df_avg.to_string(index=False))
-
-    # --- Média global (opcional, mas útil) ---
-    global_avg = df[metric_cols].mean().to_frame(name="mean").T
-
-    print("\n=== GLOBAL AVERAGE (sanity check) ===\n")
-    print(global_avg.to_string(index=False))
-
-    # --- Save ---
-    if args.save:
-        output_path = os.path.join(PATH, args.file + "_avg.csv")
-        df_avg.to_csv(output_path, index=False)
-        print(f"\nSaved grouped results to: {output_path}")
-
-        global_path = os.path.join(PATH, args.file + "_global_avg.csv")
-        global_avg.to_csv(global_path, index=False)
-        print(f"Saved global average to: {global_path}")
-
-
-if __name__ == "__main__":
-    main()

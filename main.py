@@ -45,8 +45,8 @@ def main():
     SHEET_NAME = 'Raw spectral'
     DS = os.path.join(PATH, FILE_NAME + DATA_TYPE)
 
-    GENERATOR_LAYERS = [64]
-    DISCRIMINATOR_LAYERS = [64]
+    GENERATOR_LAYERS = [64, 128, 128, 64]
+    DISCRIMINATOR_LAYERS = [64, 128, 128, 64]
 
     BATCH_SIZE = args.batch_size
     EPOCHS = args.epochs
