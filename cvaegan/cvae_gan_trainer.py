@@ -33,9 +33,7 @@ class GAN_trainer():
 
         self.model = CVAE_GAN(
             DATA_LENGTH=self.DATA_LENGTH,
-            NUM_CONDITIONS=self.NUM_CONDITIONS,
-            generator_layer_sizes=self.generator_layer_sizes,
-            discriminator_layer_sizes=self.discriminator_layer_sizes
+
         ).to(device)
 
         self.adv_loss = nn.BCEWithLogitsLoss()

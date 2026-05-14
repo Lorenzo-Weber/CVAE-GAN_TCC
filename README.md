@@ -1,13 +1,8 @@
-# TO DO:
-1. Test with multiple datasets
-2. Try different sizes (layers) 
-3. Compare and store results
-
 ## CVAE-GAN for NIR Spectra Generation
 
 This repository implements a **CVAE-GAN** (Conditional Variational Autoencoder + Generative Adversarial Network) used in my final graduation project.
 
-The model was designed to work with one-dimensional spectra (vectors) and conditional labels, making it suitable for **data augmentation** tasks in classification or regression problems.
+The model was designed to work with one-dimensional spectral data (vectors) and conditional labels, making it suitable for **data augmentation** tasks in regression problems.
 
 ---
 

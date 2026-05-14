@@ -28,9 +28,9 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--batch_size", type=int, default=8)
-    parser.add_argument("--epochs", type=int, default=80)
-    parser.add_argument("--n_times", type=int, default=8)
-    parser.add_argument("--split", type=float, default=0.14)
+    parser.add_argument("--epochs", type=int, default=300)
+    parser.add_argument("--n_times", type=int, default=6)
+    parser.add_argument("--split", type=float, default=0.04)
 
     # No need to pass a run_id as its assigned by the tests.py
     parser.add_argument("--run_id", type=str)
@@ -39,14 +39,14 @@ def main():
     args = parser.parse_args()
 
     # Constants for better control
-    PATH = os.path.join('data', 'soilNIR')
-    FILE_NAME = 'DataResearch'
+    PATH = os.path.join('data', 'zeit')
+    FILE_NAME = 'C38R006'
     DATA_TYPE = '.xlsx'
-    SHEET_NAME = 'Raw spectral'
+    SHEET_NAME = 'X'
     DS = os.path.join(PATH, FILE_NAME + DATA_TYPE)
 
-    GENERATOR_LAYERS = [64, 128, 128, 64]
-    DISCRIMINATOR_LAYERS = [64, 128, 128, 64]
+    GENERATOR_LAYERS = [64, 128]
+    DISCRIMINATOR_LAYERS = [64, 128, 64]
 
     BATCH_SIZE = args.batch_size
     EPOCHS = args.epochs
@@ -55,8 +55,8 @@ def main():
     RUN_ID = args.run_id
 
     # Will remove later for testing
-    # torch.manual_seed(30)
-    # np.random.seed(30)
+    torch.manual_seed(42)
+    np.random.seed(42)
 
     os.makedirs('figs/', exist_ok=True)
 
@@ -67,8 +67,10 @@ def main():
         df = pd.read_excel(DS, sheet_name=SHEET_NAME)
 
     # Yeah could be better
-    x = df.iloc[:, 1:-2].to_numpy(dtype=np.float32)
-    y = df.iloc[:, -2:].to_numpy(dtype=np.float32)
+    x = df.iloc[:, 6:].to_numpy(dtype=np.float32)
+    y = df.iloc[:, :6].to_numpy(dtype=np.float32)
+
+    # y = y.reshape(-1, 1)
 
     NUM_FEATURES = x.shape[1]
     NUM_CONDITIONS = y.shape[1]

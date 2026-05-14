@@ -3,7 +3,7 @@ from concurrent.futures import ProcessPoolExecutor
 import os
 import uuid
 
-MAX_GPU_PROCESSES = 4
+MAX_GPU_PROCESSES = 3
 
 def run_experiment(params):
     split, n_times, run_id = params
